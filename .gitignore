@@ -1,0 +1,14 @@
+# Nicht öffentlich: Designunterlagen, lokale Claude-Notizen, lokale Gerätekonfiguration
+tmp/
+CLAUDE.local.md
+*.local.json
+.env
+.env.*
+
+# Laufzeitzustand (STATE_DIR bei lokalen Tests)
+state/
+
+node_modules/
+dist/
+coverage/
+*.log

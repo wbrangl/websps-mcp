@@ -1,0 +1,114 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Befehle
+
+```bash
+npm run build        # tsc -p tsconfig.build.json → dist/ (ohne *.test.ts)
+npm run dev          # Server per tsx direkt aus src/ (stdio)
+npm run typecheck
+npm run lint         # biome check; npm run format behebt automatisch
+npm test             # vitest run
+npx vitest run src/device/crc16.test.ts      # einzelne Testdatei
+npx vitest run -t "matches the CRC"          # einzelner Test nach Name
+```
+
+Tests liegen neben dem Code (`src/**/*.test.ts`). Manueller stdio-Test: JSON-RPC-Zeilen per Pipe an
+`node dist/index.js` schicken (stdout = Protokoll, Logs nach stderr).
+
+Private Hinweise (Designunterlagen, Testgerät) stehen in `CLAUDE.local.md`.
+
+Dieses Repo wird unter MIT-Lizenz veröffentlicht: Keine Zugangsdaten, Kundennamen, internen IPs oder Inhalte aus
+nicht öffentlichen Unterlagen in committete Dateien, Commits oder Testdaten übernehmen.
+
+## Worum es geht
+
+Ein MCP-Server, über den beliebige Agenten-Plattformen (Claude, OpenAI, Hermes, OpenClaw, Ontheia, …)
+Web@SPS-SPS-Geräte (IPC@CHIP, 16-Bit DOS, einfädig) über deren HTTP/JSON-API (`/api`, `/files`) steuern —
+auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
+
+## Stack
+
+- TypeScript 7 (ESM, `NodeNext`, strict), Node ≥22 (Node 20 ist EOL; vitest 5 braucht ≥22), npm, `vitest`,
+  `biome`; Paketname `websps-mcp`. Alle Abhängigkeiten exakt gepinnt.
+- Einstieg: `src/index.ts` (stdio-Adapter) → `src/server.ts` (`createServer()`, transportfreie Factory, die auch
+  ein späterer HTTP-Adapter nutzt). Geräte-Client unter `src/device/`.
+- MCP-SDK: **`@modelcontextprotocol/server` v2** (exakt pinnen, Stand 2.3.0), **nicht** das alte
+  `@modelcontextprotocol/sdk` 1.x (kennt die Revision 2026-07-28 nicht). v2 bedient über `serveStdio(factory)`
+  bzw. `createMcpHandler` neue Clients (2026-07-28, zustandslos) und per Standard (`legacy: 'serve'`) auch ältere
+  Clients mit `initialize`-Handshake (2025-11-25 bis 2024-10-07) aus derselben Server-Factory.
+  Erfordert `zod` ^4.2 und in `tsconfig.json` `"types": ["node"]`.
+- Erster Release: nur stdio. Remote-HTTP kommt später, der Kern muss es aber ohne Umbau erlauben.
+
+## Architektur (geplant)
+
+- **Transportfreier Kern.** Tool-Logik kennt weder stdio noch HTTP; beides sind dünne Adapter.
+- **Konfiguration auf zwei Wegen**, beide gleichwertig unterstützt:
+  - JSON-Datei (Pfad per `--config` oder `WEBSPS_CONFIG`) mit `devices[]` (`alias`, `url`, `auth.user`,
+    `auth.password_env` / `auth.password_file`, `timeout_ms`, `timeouts_ms` pro Methode) — für mehrere Geräte.
+  - Kurzform nur über Umgebungsvariablen für genau ein Gerät (`WEBSPS_URL`, `WEBSPS_USER`, `WEBSPS_PASSWORD`,
+    `WEBSPS_PROFILE`) — für den üblichen `npx`-Eintrag mit `env` in der Client-Konfiguration.
+  Jedes Tool hat den optionalen Parameter `device` (Pflicht bei >1 Gerät). Keine plattformspezifische Secret-Syntax.
+- **Eine Warteschlange pro Gerät** (Gerät ist einfädig). Über mehrere stdio-Prozesse hinweg: Sperrdatei pro Gerät
+  (best effort).
+- **Circuit Breaker bei Auth-Fehlern.** Bei Fehlercode `1` das Gerät als `auth_failed` markieren, mindestens 60s
+  keine Anfragen, danach genau ein Probe-Request; schlägt der fehl, gesperrt bis zur Konfigurationsänderung. Code 1
+  nie automatisch wiederholen (5 Fehlversuche → 60s IP-Sperre). Code `5` BUSY → Backoff + Wiederholung.
+  Nur Basic-Auth verwenden, nie `auth.login`-Sessions (nur ein Login-Slot am Gerät).
+- **Profile** `read` ⊂ `operate` ⊂ `develop` ⊂ `admin` gelten für die ganze Instanz (= ein Eintrag in der
+  Client-Konfiguration, `WEBSPS_PROFILE` bzw. top-level `profile` in der JSON), **kein** Profil pro Gerät — wer
+  unterschiedliche Rechte je Gerät braucht, legt einen zweiten Eintrag an. Der Agent kann das Profil nicht ändern.
+  `tools/list` zeigt nur die Tools des konfigurierten Profils.
+  Riskante Tools (`config_set`, `device_control`, `device_reboot`) nur im Profil `admin`. Am Gerät zusätzlich je
+  Profil ein eigener Benutzer mit passender `PERM_*`-Bitmaske.
+- **`STATE_DIR`** enthält Log-Akkumulator, Sampling-Aufzeichnungen, JSONL-Audit-Log aller Schreibzugriffe und
+  zeitgestempelte Backups vor jedem Schreiben (das Gerät hält nur eine `.BAK`-Generation).
+- **Ergebnisse aufbereitet, mit `raw`-Feld als Rückfall.**
+  - Label-Anreicherung (`{channel, value, label}`) aus einem `io.labels`-Cache pro Gerät (TTL ~60s, sofort
+    invalidiert nach eigenem `io_label_set`) — nicht bei jedem `io_read` live nachfragen.
+  - `io.read_all` entpacken, Zuordnung **nicht hart kodieren**:
+    - Generische Regel: jedes Feld `<Op>B` mit Byte-Array ist der gepackte Bit-Zustand des Operanden `<Op>`,
+      Bit 0 = niederwertigstes Bit (`VB[0]=17` → V0.0, V0.4); Anzahl aus der Array-Länge (× 8). Das deckt auch
+      Felder ab, die in der Doku-Tabelle fehlen, z.B. `WB` = VKE der Analogkanäle, Operand `W0.0`–`W5.7`.
+    - Bezeichnungen/Typen aus der Tabelle „Variablen ID“ in `/system/html/dat_vis.htm` des jeweiligen Geräts
+      parsen und pro Gerät cachen (bleibt synchron mit der Firmware). Die „Anzahl“-Spalte dort ignorieren
+      (variantenabhängig mit Fußnoten, z.B. „¹ 8/16“).
+    - Nicht zuordenbare Felder (z.B. `status`, `cycle`, `msgcnt`) oder alles bei fehlgeschlagenem Parsen
+      unverändert in `raw` durchreichen.
+- **Lange Vorgänge** (`sample`, Warten auf `rules_activate`) über ein Start/Abruf-Muster mit vom Server vergebenem
+  Handle — nicht über MCP-Tasks und nicht synchron blockierend (Client-Timeouts ca. 50–60s).
+
+## Fallstricke der Geräte-API
+
+- HTTP-Status ist **immer 200**; `ok` / `error.code` im Body prüfen. Gerätefehler als MCP-`isError` mit
+  `{code, name, hint}` abbilden.
+- `/files` ist **immer POST**, auch beim Lesen; Schreiben über das Wire-Format mit `---CONTENT---`-Trenner, ab
+  ~6KB in Chunks (`BODY_SIZE=8192`), max. 32767 Byte pro Datei, kein Offset/Range-Lesen (vorher `bytes` per
+  `action:"hash"` prüfen und klar scheitern statt still abzuschneiden).
+- Prüfsumme ist **CRC-16/XMODEM** (Polynom `0x1021`, Startwert `0`, keine Spiegelung, kein End-XOR) — lässt sich
+  für `expected_hash` lokal berechnen.
+- Harte Grenzen, die `api.describe` nicht meldet (fest im Server hinterlegen): 32 Einträge bei
+  `io.read`/`io.write`-Batches und `config.get_multi`; Kanalnamen ≤15 Byte. Längen in **Byte** zählen (UTF-8 wird
+  unverändert durchgereicht; beim Chunking keine Mehrbyte-Sequenzen zerschneiden). Rules-Dateien mit CRLF erzeugen.
+- `rules.reload` blockiert bis ~4s — für Reload-artige Methoden Timeout ≥10s.
+- `rules.list` ist ungefiltert: `.BAK`-Dateien und `SYMBOLIK.INI` aus Listen ausblenden, Schreiben/Löschen darauf
+  verweigern. 8.3-Dateinamen vor dem Senden prüfen.
+- Bei `system.control` nur die Befehlsnamen verwenden, nie die Ziffern-Aliase.
+
+## Server-Invarianten (im Code erzwingen, nicht im Prompt)
+
+- `rules_write` führt immer zuerst `rules_validate` aus; Backup und `expected_hash` sind Pflicht; Schreiben aktiviert nichts.
+- `force` bei `rules.delete` nie nach außen geben (aktive Root-Datei bleibt über den Server unlöschbar).
+- Rules-Zeilen vor dem Senden auf leere mittlere Parameter prüfen (strtok fasst aufeinanderfolgende `;` zusammen
+  und verschiebt die Felder still; das Gerät warnt nur mit Code 110).
+- `io_write` erlaubt nur `S`/`M`/`V`/`U`/`AA`/`SW`.
+- Tool-Ergebnisse: vollständiges Ergebnis als kompaktes JSON im Text-`content` plus `structuredContent`;
+  Annotationen (`readOnlyHint`/`destructiveHint`) sind nur Hinweise. `tools/list` deterministisch sortieren.
+  Diagnose über `stderr` (stdout gehört bei stdio dem Protokoll).
+- Server-`instructions` und Tool-Beschreibungen auf Englisch (internationales Produkt).
+- Kein `switch`-Tool — anlagenspezifische Impuls-/Pegel-Logik gehört in den Kontext des Agenten, nicht in den Server.
+
+## Betriebshinweis
+
+Das Gerät spricht nur Klartext-HTTP (kein TLS) und darf nie direkt aus dem Internet erreichbar sein.
