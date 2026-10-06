@@ -119,7 +119,7 @@ Pass a JSON file with `--config <path>` or `WEBSPS_CONFIG`:
 | `devices[].auth.password_env` | Name of an environment variable holding the password, **or** |
 | `devices[].auth.password_file` | Path of a file holding the password (relative to the config file) |
 | `devices[].timeout_ms` | Request timeout, default 5000 |
-| `devices[].timeouts_ms` | Per device method, e.g. `{"rules.reload": 15000}`; defaults: `rules.reload` 10000, `logs.search` 30000 |
+| `devices[].timeouts_ms` | Per device method, e.g. `{"rules.reload": 15000}`; defaults: `rules.reload` 10000, `logs.search` 45000 |
 
 Passwords are never written into the configuration file itself. Each device may appear only once
 (the device locks out the requesting IP after failed logins, regardless of the user).
@@ -160,7 +160,7 @@ add a second server entry with its own profile.
 | `io_read` | read | Channel values with labels, or the complete state of all operands |
 | `io_usage` | read | Which channel addresses the active rules use, and which are free |
 | `io_labels` | read | Human-readable channel names set on the device |
-| `log_read` | read | Console messages (kept beyond the device's 25 lines) or a search of the log file |
+| `log_read` | read | Console messages (kept beyond the device's 25 lines) or a search of the log file (recent part by default, `full_scan` for all) |
 | `sample` | read | Record channel values over time (start, read, stop) |
 | `docs_get` | read | Rules operators, rules language, visualization and API docs from the device |
 | `file_list` | read | Files of a device directory |

@@ -177,7 +177,14 @@ describe.each([
     const file = parse(
       await client.callTool({ name: "log_read", arguments: { source: "logfile", grep: "Rules" } }),
     );
-    expect(file.total_matches).toBe(15);
+    expect(file).toMatchObject({ total_matches: 15, complete: false });
+    const full = parse(
+      await client.callTool({
+        name: "log_read",
+        arguments: { source: "logfile", grep: "Rules", full_scan: true },
+      }),
+    );
+    expect(full).toMatchObject({ searched_from_byte: 0, complete: true });
   });
 
   it("rejects invalid input without contacting the device", async () => {

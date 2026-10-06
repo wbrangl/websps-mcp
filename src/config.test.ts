@@ -53,7 +53,7 @@ describe("loadConfig", () => {
     expect(config.devices[1]?.timeoutMs).toBe(2000);
     expect(config.devices[1]?.methodTimeoutsMs).toEqual({
       "rules.reload": 10_000,
-      "logs.search": 30_000,
+      "logs.search": 45_000,
       "io.read_all": 3000,
     });
   });

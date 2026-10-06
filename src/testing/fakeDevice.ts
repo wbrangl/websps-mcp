@@ -371,9 +371,18 @@ function answer(state: FakeDeviceState, req: IncomingMessage, body: string): Ans
     case "logs.search": {
       const pattern = String(params?.pattern ?? "");
       const matches = state.log.filter((e) => e.message.includes(pattern)).map((e) => e.message);
+      // Like current firmware: only the end of the file unless full_scan is requested.
+      const full = params?.full_scan === true;
       return {
         ok: true,
-        result: { pattern, total_matches: matches.length, matches: matches.slice(-2), returned: 2 },
+        result: {
+          pattern,
+          total_matches: matches.length,
+          searched_from_byte: full ? 0 : 4000,
+          file_size: 5000,
+          matches: matches.slice(-2),
+          returned: 2,
+        },
       };
     }
     case "rules.operators":

@@ -8,8 +8,8 @@ export const DEFAULT_TIMEOUT_MS = 5000;
 /** Reload-type methods block on the device for up to ~4s, plus queue latency. */
 export const DEFAULT_METHOD_TIMEOUTS_MS: Readonly<Record<string, number>> = {
   "rules.reload": 10_000,
-  // Scans the whole log file on the device; takes ~10s.
-  "logs.search": 30_000,
+  // A full scan of the log file (up to ~1 MB) blocks the device for up to ~35s.
+  "logs.search": 45_000,
 };
 const DEFAULT_ENV_ALIAS = "websps";
 
