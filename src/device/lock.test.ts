@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DeviceLock } from "./lock.js";
@@ -28,10 +28,23 @@ describe("DeviceLock", () => {
     expect(order).toEqual(["a done", "b"]);
   });
 
+  it("does not judge PIDs from another host (container)", async () => {
+    const path = join(dir, "device.lock");
+    await mkdir(path);
+    await writeFile(join(path, "owner"), "other-container 999999999");
+    const sleeps: number[] = [];
+    const lock = new DeviceLock(path, async (ms) => {
+      sleeps.push(ms);
+      if (sleeps.length === 3) await rm(path, { recursive: true, force: true });
+    });
+    await (await lock.acquire())();
+    expect(sleeps).toHaveLength(3);
+  });
+
   it("takes over a lock left by a dead process or after a minute", async () => {
     const path = join(dir, "device.lock");
     await mkdir(path);
-    await writeFile(join(path, "owner"), "999999999");
+    await writeFile(join(path, "owner"), `${hostname()} 999999999`);
     await (await new DeviceLock(path).acquire())();
 
     await mkdir(path);

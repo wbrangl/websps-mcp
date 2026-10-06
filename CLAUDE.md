@@ -12,6 +12,7 @@ npm run lint         # biome check; npm run format behebt automatisch
 npm test             # vitest run
 npx vitest run src/device/crc16.test.ts      # einzelne Testdatei
 npx vitest run -t "matches the CRC"          # einzelner Test nach Name
+docker build -t websps-mcp:dev .             # Image (stdio-Server, STATE_DIR=/state, User node)
 ```
 
 Tests liegen neben dem Code (`src/**/*.test.ts`) und brauchen kein echtes Gerät: `src/testing/fakeDevice.ts` ist

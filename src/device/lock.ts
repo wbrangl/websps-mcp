@@ -1,4 +1,5 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 
 /** A lock older than this is considered left over from a crashed process. */
@@ -29,7 +30,9 @@ export class DeviceLock {
     for (;;) {
       try {
         await mkdir(this.dir);
-        await writeFile(join(this.dir, "owner"), String(process.pid)).catch(() => undefined);
+        await writeFile(join(this.dir, "owner"), `${hostname()} ${process.pid}`).catch(
+          () => undefined,
+        );
         return () => rm(this.dir, { recursive: true, force: true });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
@@ -50,7 +53,11 @@ export class DeviceLock {
     try {
       const info = await stat(this.dir);
       if (Date.now() - info.mtimeMs > STALE_MS) return true;
-      const pid = Number(await readFile(join(this.dir, "owner"), "utf8"));
+      const [host, pidText] = (await readFile(join(this.dir, "owner"), "utf8")).split(" ");
+      // PIDs are only comparable on the same host: containers have their own PID namespaces,
+      // so a lock from another container is only taken over once it is old.
+      if (host !== hostname()) return false;
+      const pid = Number(pidText);
       if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false;
       try {
         process.kill(pid, 0);

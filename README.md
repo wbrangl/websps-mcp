@@ -24,6 +24,7 @@ clients that use the `initialize` handshake.
 - [Working with rules](#working-with-rules)
 - [State directory](#state-directory)
 - [Errors](#errors)
+- [Docker](#docker)
 - [Running from source](#running-from-source)
 - [License](#license)
 
@@ -300,6 +301,55 @@ Tool errors carry `code`, `name`, `message` and a `hint`. Device errors keep the
 | 1007 | `INVALID_INPUT` | Arguments rejected before anything was sent |
 
 Diagnostic messages go to the server's stderr, which most clients show in their MCP log.
+
+## Docker
+
+The image runs the same stdio server; the MCP client starts a container per session. Until images
+are published, build it yourself:
+
+```sh
+docker build -t websps-mcp:0.1.0 .
+```
+
+Client configuration (`-i` keeps stdin open for the protocol; do not add `-t`):
+
+```json
+{
+  "mcpServers": {
+    "websps": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "--env-file", "/etc/websps/websps.env",
+        "-v", "websps-state:/state",
+        "websps-mcp:0.1.0"
+      ]
+    }
+  }
+}
+```
+
+with `/etc/websps/websps.env` containing `WEBSPS_URL=http://192.168.2.102`, `WEBSPS_USER=…`,
+`WEBSPS_PASSWORD=…` and `WEBSPS_PROFILE=…` — an env file keeps the password out of the client
+configuration and the process list.
+
+For several devices, mount the configuration directory and pass the file:
+
+```json
+"args": [
+  "run", "-i", "--rm",
+  "--env-file", "/etc/websps/websps.env",
+  "-v", "/etc/websps:/config:ro",
+  "-v", "websps-state:/state",
+  "websps-mcp:0.1.0", "--config", "/config/devices.json"
+]
+```
+
+- The state directory inside the container is `/state`. Use the **same named volume** for all
+  containers of a device so they share logs and backups and coordinate their access to the device.
+- The container must be able to reach the device. The default bridge network usually can; otherwise
+  use `--network host` (Linux).
+- The container runs as the unprivileged `node` user and opens no ports.
 
 ## Running from source
 

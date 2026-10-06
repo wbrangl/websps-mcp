@@ -1,0 +1,10 @@
+.git
+node_modules
+dist
+coverage
+state
+tmp
+CLAUDE.local.md
+*.local.json
+.env
+.env.*
