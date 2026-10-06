@@ -37,8 +37,11 @@ export const ioRead: ToolDefinition = {
       },
       handler(async ({ device: alias, channels, all, types }) => {
         const device = app.devices.resolve(alias);
-        if ((channels === undefined) === (all !== true)) {
-          throw invalidInput("Pass either `channels` or `all: true`");
+        if (channels !== undefined && all === true) {
+          throw invalidInput("Both `channels` and `all` were given; remove one of them");
+        }
+        if (channels === undefined && all !== true) {
+          throw invalidInput("Pass `channels` (list of channel names) or `all: true`");
         }
         if (channels !== undefined) return readChannels(device, channels);
         return readAll(device, types);

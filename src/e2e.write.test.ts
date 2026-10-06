@@ -47,8 +47,7 @@ describe.each([
 describe("io_write", () => {
   it("writes, verifies and validates values before sending", async () => {
     const ok = await call("io_write", {
-      channel: "S5.0",
-      value: true,
+      writes: [{ channel: "S5.0", value: true }],
       verify: { channel: "A0.7", expect: 1, delay_ms: 0 },
     });
     expect(ok.body).toMatchObject({
@@ -68,9 +67,31 @@ describe("io_write", () => {
     expect(batch.body.verify).toEqual([{ channel: "SW3", expected: 31.5, actual: 31.5, ok: true }]);
 
     const calls = device.state.calls.length;
-    expect((await call("io_write", { channel: "E0.0", value: 1 })).body.error.code).toBe(1007);
-    expect((await call("io_write", { channel: "S5.1", value: 2 })).body.error.code).toBe(1007);
+    const invalid = (channel: string, value: number) =>
+      call("io_write", { writes: [{ channel, value }] });
+    expect((await invalid("E0.0", 1)).body.error.code).toBe(1007);
+    expect((await invalid("S5.1", 2)).body.error.code).toBe(1007);
     expect(device.state.calls.length).toBe(calls);
+  });
+
+  it("has a single input form, so leftover fields of an old form cannot conflict", async () => {
+    const tool = (await client.listTools()).tools.find((t) => t.name === "io_write");
+    expect(Object.keys(tool?.inputSchema.properties ?? {}).sort()).toEqual([
+      "device",
+      "verify",
+      "writes",
+    ]);
+    expect(tool?.inputSchema.required).toEqual(["writes"]);
+
+    // The call a model sent repeatedly in a live test: extra top-level channel/value next to writes.
+    const reported = await call("io_write", {
+      device: "websps",
+      channel: "S0.0",
+      value: 1,
+      writes: [{ channel: "S0.0", value: 1 }],
+      verify: { channel: "S0.0", expect: 1, delay_ms: 0 },
+    });
+    expect(reported.body).toMatchObject({ all_ok: true, verify: [{ ok: true }] });
   });
 });
 

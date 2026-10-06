@@ -60,19 +60,18 @@ export const ioWrite: ToolDefinition = {
         title: "Write channels",
         description: [
           "Set Web@SPS operands: digital S/M/V/U (0/1, e.g. visu switch S0.0) or analog AA/SW (number, e.g. setpoint SW0).",
-          `Pass \`channel\`+\`value\` or up to ${MAX_BATCH} \`writes\`. Each write reports \`success\` on its own.`,
+          `\`writes\` lists 1 to ${MAX_BATCH} {channel, value} pairs, e.g. [{"channel":"S0.0","value":1}]. Each write reports \`success\` on its own.`,
           "`verify: true` reads the written channels back; `verify: {channel, expect, delay_ms}` checks a different channel",
           "after a delay, e.g. a status output that should follow a switch. How a plant reacts (level vs. pulse) is plant specific.",
         ].join(" "),
         inputSchema: z.object({
           device: deviceParam(app),
-          channel: z.string().min(1).optional(),
-          value: valueSchema.optional(),
+          // One form only: alternative top-level forms (channel/value vs. writes) led models to
+          // fill in both. JSON Schema oneOf at the root is not portable across clients.
           writes: z
             .array(z.object({ channel: z.string().min(1), value: valueSchema }))
             .min(1)
-            .max(MAX_BATCH)
-            .optional(),
+            .max(MAX_BATCH),
           verify: z
             .union([
               z.literal(true),
@@ -91,15 +90,7 @@ export const ioWrite: ToolDefinition = {
         "io_write",
         (args) => ({ ...args }),
         async (device, args) => {
-          const writes =
-            args.writes ??
-            (args.channel !== undefined && args.value !== undefined
-              ? [{ channel: args.channel, value: args.value }]
-              : undefined);
-          if (writes === undefined || (args.writes !== undefined && args.channel !== undefined)) {
-            throw invalidInput("Pass either `channel` and `value`, or `writes`");
-          }
-          const prepared = writes.map((w) => ({
+          const prepared = args.writes.map((w) => ({
             channel: w.channel.trim(),
             value: writeValue(w.channel.trim(), w.value),
           }));

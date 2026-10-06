@@ -27,10 +27,17 @@ export const configGet: ToolDefinition = {
       },
       handler(async ({ device: alias, keys, section, schema }) => {
         const device = app.devices.resolve(alias);
-        const modes = [keys !== undefined, section !== undefined, schema === true];
-        if (modes.filter(Boolean).length !== 1) {
-          throw invalidInput("Pass exactly one of `keys`, `section` or `schema: true`");
+        const given = [
+          keys !== undefined && "keys",
+          section !== undefined && "section",
+          schema === true && "schema",
+        ].filter((name): name is string => name !== false);
+        if (given.length > 1) {
+          throw invalidInput(
+            `Only one of keys, section, schema may be given, got: ${given.join(", ")}`,
+          );
         }
+        if (given.length === 0) throw invalidInput("Pass `keys`, `section` or `schema: true`");
         if (schema === true) {
           return { device: device.alias, fields: await device.configSchema.get() };
         }

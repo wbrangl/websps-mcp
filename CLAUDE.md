@@ -194,6 +194,11 @@ Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Do
   Annotationen (`readOnlyHint`/`destructiveHint`) sind nur Hinweise. `tools/list` deterministisch sortieren.
   Diagnose über `stderr` (stdout gehört bei stdio dem Protokoll).
 - Server-`instructions` und Tool-Beschreibungen auf Englisch (internationales Produkt).
+- **Tool-Schemas eindeutig halten:** keine alternativen Top-Level-Formen für dieselbe Eingabe (z.B. nicht
+  `channel`+`value` *oder* `writes`) — Modelle füllen sonst beide aus und wiederholen den Fehler (live beobachtet).
+  `oneOf`/`anyOf` an der Schema-Wurzel ist nicht portabel (manche Clients/Anbieter verlangen ein schlichtes
+  Objekt). Wo sich Parameter ausschließen, nennt die Fehlermeldung konkret, welche Felder übergeben wurden und
+  welches weg muss. Unbekannte Zusatzfelder werden vom SDK ignoriert.
 - Kein `switch`-Tool — anlagenspezifische Impuls-/Pegel-Logik gehört in den Kontext des Agenten, nicht in den Server.
 
 ## Betriebshinweis
