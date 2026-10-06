@@ -1,5 +1,7 @@
 import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/server";
+import type { App } from "./tools/common.js";
+import { registerTools } from "./tools/index.js";
 
 const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
 
@@ -14,7 +16,12 @@ const INSTRUCTIONS = [
   "Some tools may be unavailable for the configured profile.",
 ].join(" ");
 
-/** Transport-free server factory; stdio and (later) HTTP adapters both call this. */
-export function createServer(): McpServer {
-  return new McpServer({ name: "websps-mcp", version }, { instructions: INSTRUCTIONS });
+/**
+ * Transport-free server factory; stdio and (later) HTTP adapters both call this. Device state
+ * lives in `app` and is shared across all server instances of the process.
+ */
+export function createServer(app: App): McpServer {
+  const server = new McpServer({ name: "websps-mcp", version }, { instructions: INSTRUCTIONS });
+  registerTools(server, app);
+  return server;
 }

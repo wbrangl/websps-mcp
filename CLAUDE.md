@@ -14,8 +14,11 @@ npx vitest run src/device/crc16.test.ts      # einzelne Testdatei
 npx vitest run -t "matches the CRC"          # einzelner Test nach Name
 ```
 
-Tests liegen neben dem Code (`src/**/*.test.ts`). Manueller stdio-Test: JSON-RPC-Zeilen per Pipe an
-`node dist/index.js` schicken (stdout = Protokoll, Logs nach stderr).
+Tests liegen neben dem Code (`src/**/*.test.ts`) und brauchen kein echtes Gerät: `src/testing/fakeDevice.ts` ist
+ein lokaler HTTP-Server, der wie ein Web@SPS antwortet (inkl. selbst nachgebauter „Variablen ID“-Tabelle — keine
+Firmware-Inhalte ins Repo kopieren). `src/e2e.test.ts` startet den Server per `tsx` über stdio und prüft ihn mit dem
+Client-SDK in **beiden** Protokoll-Eras (`{ pin: "2026-07-28" }` und `legacy`). Manueller Test: JSON-RPC-Zeilen per
+Pipe an `node dist/index.js` schicken (stdout = Protokoll, Logs nach stderr).
 
 Private Hinweise (Designunterlagen, Testgerät) stehen in `CLAUDE.local.md`.
 
@@ -32,8 +35,6 @@ auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
 
 - TypeScript 7 (ESM, `NodeNext`, strict), Node ≥22 (Node 20 ist EOL; vitest 5 braucht ≥22), npm, `vitest`,
   `biome`; Paketname `websps-mcp`. Alle Abhängigkeiten exakt gepinnt.
-- Einstieg: `src/index.ts` (stdio-Adapter) → `src/server.ts` (`createServer()`, transportfreie Factory, die auch
-  ein späterer HTTP-Adapter nutzt). Geräte-Client unter `src/device/`.
 - MCP-SDK: **`@modelcontextprotocol/server` v2** (exakt pinnen, Stand 2.3.0), **nicht** das alte
   `@modelcontextprotocol/sdk` 1.x (kennt die Revision 2026-07-28 nicht). v2 bedient über `serveStdio(factory)`
   bzw. `createMcpHandler` neue Clients (2026-07-28, zustandslos) und per Standard (`legacy: 'serve'`) auch ältere
@@ -41,20 +42,36 @@ auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
   Erfordert `zod` ^4.2 und in `tsconfig.json` `"types": ["node"]`.
 - Erster Release: nur stdio. Remote-HTTP kommt später, der Kern muss es aber ohne Umbau erlauben.
 
-## Architektur (geplant)
+## Architektur
 
-- **Transportfreier Kern.** Tool-Logik kennt weder stdio noch HTTP; beides sind dünne Adapter.
+Umgesetzt: Konfiguration, Geräte-Client, Tools `devices_list`, `device_status`, `io_read`, `io_labels`.
+Noch offen u.a.: Sperrdatei pro Gerät, `STATE_DIR`, alle schreibenden Tools.
+
+- **Transportfreier Kern.** `src/index.ts` (stdio-Adapter: Config laden, `serveStdio`) → `src/server.ts`
+  (`createServer(app)`, auch für einen späteren HTTP-Adapter). Die SDK-Factory kann pro Verbindung/Era mehrfach
+  aufgerufen werden — Gerätezustand (Queue, Circuit Breaker, Caches) lebt deshalb in `DeviceRegistry`
+  (`src/device/registry.ts`) außerhalb der Factory und wird über `app` geteilt.
+- **Tools** (`src/tools/`): je Tool eine `ToolDefinition` mit Mindestprofil; `tools/index.ts` registriert nur die
+  für das Profil sichtbaren, nach Namen sortiert. `handler()` in `tools/common.ts` erzeugt Text-JSON +
+  `structuredContent` und wandelt `WebspsError` in `isError` mit `{code, name, message, hint, device}`.
+- **Fehlercodes** (`src/errors.ts`): Gerätecodes 1–99 unverändert, eigene Server-Codes ab 1000 (`CIRCUIT_OPEN`,
+  `AUTH_BLOCKED`, `UNREACHABLE`, `TIMEOUT`, `BAD_RESPONSE`, `UNKNOWN_DEVICE`, `INVALID_INPUT`). Hints auf Englisch;
+  `message` ist bei Gerätefehlern der (deutsche) Gerätetext.
 - **Konfiguration auf zwei Wegen**, beide gleichwertig unterstützt:
   - JSON-Datei (Pfad per `--config` oder `WEBSPS_CONFIG`) mit `devices[]` (`alias`, `url`, `auth.user`,
     `auth.password_env` / `auth.password_file`, `timeout_ms`, `timeouts_ms` pro Methode) — für mehrere Geräte.
   - Kurzform nur über Umgebungsvariablen für genau ein Gerät (`WEBSPS_URL`, `WEBSPS_USER`, `WEBSPS_PASSWORD`,
     `WEBSPS_PROFILE`) — für den üblichen `npx`-Eintrag mit `env` in der Client-Konfiguration.
-  Jedes Tool hat den optionalen Parameter `device` (Pflicht bei >1 Gerät). Keine plattformspezifische Secret-Syntax.
-- **Eine Warteschlange pro Gerät** (Gerät ist einfädig). Über mehrere stdio-Prozesse hinweg: Sperrdatei pro Gerät
-  (best effort).
-- **Circuit Breaker bei Auth-Fehlern.** Bei Fehlercode `1` das Gerät als `auth_failed` markieren, mindestens 60s
-  keine Anfragen, danach genau ein Probe-Request; schlägt der fehl, gesperrt bis zur Konfigurationsänderung. Code 1
-  nie automatisch wiederholen (5 Fehlversuche → 60s IP-Sperre). Code `5` BUSY → Backoff + Wiederholung.
+  Jedes Tool hat den optionalen Parameter `device` (im Schema als `enum` der Aliase; Pflicht bei >1 Gerät). Keine
+  plattformspezifische Secret-Syntax, kein Klartext-Passwort in der Datei. `WEBSPS_PROFILE` überschreibt das
+  `profile` der Datei; Standardprofil ist `read`. Dasselbe Gerät (Host) darf nur einmal konfiguriert sein — die
+  IP-Sperre gilt pro anfragender IP, nicht pro Benutzer, und zwei Queues würden die Serialisierung aushebeln.
+- **Geräte-Client** (`src/device/client.ts`): eine Promise-Queue pro Gerät (Gerät ist einfädig). Über mehrere
+  stdio-Prozesse hinweg später: Sperrdatei pro Gerät (best effort). Code `5` BUSY → bis zu 3 Wiederholungen mit
+  Backoff. Body-Limit 8192 Byte wird vor dem Senden geprüft.
+- **Circuit Breaker bei Auth-Fehlern** (`closed` → `open` → `probing` → `blocked`): Code `1` → 60s keine Anfragen,
+  danach genau ein Probe-Request mit neu gelesenem Passwort; schlägt der fehl → `blocked`, bis sich das Passwort
+  aus der Quelle (`password_file`) ändert. Code 1 nie automatisch wiederholen (5 Fehlversuche → 60s IP-Sperre).
   Nur Basic-Auth verwenden, nie `auth.login`-Sessions (nur ein Login-Slot am Gerät).
 - **Profile** `read` ⊂ `operate` ⊂ `develop` ⊂ `admin` gelten für die ganze Instanz (= ein Eintrag in der
   Client-Konfiguration, `WEBSPS_PROFILE` bzw. top-level `profile` in der JSON), **kein** Profil pro Gerät — wer
@@ -64,7 +81,7 @@ auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
   Profil ein eigener Benutzer mit passender `PERM_*`-Bitmaske.
 - **`STATE_DIR`** enthält Log-Akkumulator, Sampling-Aufzeichnungen, JSONL-Audit-Log aller Schreibzugriffe und
   zeitgestempelte Backups vor jedem Schreiben (das Gerät hält nur eine `.BAK`-Generation).
-- **Ergebnisse aufbereitet, mit `raw`-Feld als Rückfall.**
+- **Ergebnisse aufbereitet, Nicht-Zuordenbares unverändert im Feld `extra`.**
   - Label-Anreicherung (`{channel, value, label}`) aus einem `io.labels`-Cache pro Gerät (TTL ~60s, sofort
     invalidiert nach eigenem `io_label_set`) — nicht bei jedem `io_read` live nachfragen.
   - `io.read_all` entpacken, Zuordnung **nicht hart kodieren**:
@@ -74,15 +91,23 @@ auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
     - Bezeichnungen/Typen aus der Tabelle „Variablen ID“ in `/system/html/dat_vis.htm` des jeweiligen Geräts
       parsen und pro Gerät cachen (bleibt synchron mit der Firmware). Die „Anzahl“-Spalte dort ignorieren
       (variantenabhängig mit Fußnoten, z.B. „¹ 8/16“).
-    - Nicht zuordenbare Felder (z.B. `status`, `cycle`, `msgcnt`) oder alles bei fehlgeschlagenem Parsen
-      unverändert in `raw` durchreichen.
+    - Nicht zuordenbare Felder (z.B. `status`, `cycle`, `msgcnt`) unverändert in `extra` durchreichen. Schlägt das
+      Laden der Tabelle fehl, gilt nur die generische Regel (neuer Versuch nach 5 min).
+    - Umgesetzt in `src/device/readAll.ts`; `io_read all:true` listet bei Bit-Operanden nur die gesetzten Kanäle
+      (`on`), bei Wertgruppen >16 nur Werte ≠ 0 (`zero_omitted`), plus `labeled` für alle beschrifteten Kanäle.
 - **Lange Vorgänge** (`sample`, Warten auf `rules_activate`) über ein Start/Abruf-Muster mit vom Server vergebenem
   Handle — nicht über MCP-Tasks und nicht synchron blockierend (Client-Timeouts ca. 50–60s).
 
 ## Fallstricke der Geräte-API
 
 - HTTP-Status ist **immer 200**; `ok` / `error.code` im Body prüfen. Gerätefehler als MCP-`isError` mit
-  `{code, name, hint}` abbilden.
+  `{code, name, hint}` abbilden. Falsches Passwort und fehlende Auth liefern beide Code 1.
+- `io.read` kennt **keine Wert-Operanden** (Zählwerte `CV`, Zeitwerte `TV`, Analog `AE`/`AA`/`SW` → Eintrag mit
+  `error`); `io_read` holt diese deshalb aus `io.read_all`. Fehler pro Batch-Eintrag sind deutsche Freitexte — nicht
+  auf den Text prüfen. Immer die Batch-Form `{"channels":[…]}` senden: die Einzelform `{"channel":…}` meldet bei
+  unbekannten Kanälen irreführend „Parameter 'channel' nicht vorhanden“.
+- `api.describe` braucht keine Berechtigung (gut für Erreichbarkeitsprüfung); Hilfeseiten liegen unter
+  `/system/html/` (per GET, HTTP-Status dort normal).
 - `/files` ist **immer POST**, auch beim Lesen; Schreiben über das Wire-Format mit `---CONTENT---`-Trenner, ab
   ~6KB in Chunks (`BODY_SIZE=8192`), max. 32767 Byte pro Datei, kein Offset/Range-Lesen (vorher `bytes` per
   `action:"hash"` prüfen und klar scheitern statt still abzuschneiden).
