@@ -302,6 +302,10 @@ Tool errors carry `code`, `name`, `message` and a `hint`. Device errors keep the
 
 Diagnostic messages go to the server's stderr, which most clients show in their MCP log.
 
+If an agent does not seem to know the tools although the server is connected: some clients make a
+server's tools visible to the model only after they are enabled individually per agent or session.
+Check the client's tool settings; `tools/list` of the server always returns all tools of the profile.
+
 ## Docker
 
 The image runs the same stdio server; the MCP client starts a container per session. Until images
@@ -345,8 +349,16 @@ For several devices, mount the configuration directory and pass the file:
 ]
 ```
 
-- The state directory inside the container is `/state`. Use the **same named volume** for all
-  containers of a device so they share logs and backups and coordinate their access to the device.
+- The state directory inside the container is `/state`. Use a **named volume** (as above), and the
+  **same** one for all containers of a device so they share logs and backups and coordinate their
+  access to the device. A new named volume takes over the image's permissions, so it works with both
+  rootful and rootless Docker.
+- **Bind mounts and file permissions:** the server runs as `node` (UID 1000 in the container). A host
+  directory mounted to `/state` must be writable for that user, and mounted configuration or password
+  files must be readable for it (a password file with mode `600` owned by your host user is not).
+  With rootless Docker, container UID 1000 is a different UID on the host (e.g. 100999, from
+  `/etc/subuid`), so a directory owned by your own user is not writable from the container. Prefer the
+  named volume for `/state`; for mounted files, adjust their owner or mode for the mapped UID.
 - The container must be able to reach the device. The default bridge network usually can; otherwise
   use `--network host` (Linux).
 - The container runs as the unprivileged `node` user and opens no ports.
