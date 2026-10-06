@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { profileAllows } from "../profiles.js";
-import { configSet, deviceControl, deviceReboot } from "./admin.js";
+import { configSet, deviceControl, deviceMaintenance, deviceReboot } from "./admin.js";
 import type { App, ToolDefinition } from "./common.js";
 import { configGet } from "./config.js";
 import { deviceStatus, devicesList } from "./devices.js";
@@ -35,10 +35,11 @@ const TOOLS: readonly ToolDefinition[] = [
   ioLabelSet,
   fileWrite,
   fileDelete,
-  // admin
-  configSet,
   deviceControl,
   deviceReboot,
+  // admin
+  configSet,
+  deviceMaintenance,
 ];
 
 /** Registers the tools visible for the configured profile, sorted by name for a stable tools/list. */

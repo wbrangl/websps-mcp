@@ -18,7 +18,7 @@ export const logRead: ToolDefinition = {
           '`source: "console"` (default): recent console messages, accumulated by the server beyond the device\'s 25-line buffer;',
           "pass the returned `next_cursor` as `since_cursor` to get only newer lines, `grep` filters case-insensitively.",
           "`gap: true` means lines were lost on the device between two reads.",
-          '`source: "logfile"`: search the device\'s full log file with `grep` (required, case-sensitive);',
+          '`source: "logfile"`: search the device\'s full log file with `grep` (required; older firmware matches case-sensitively);',
           "this takes about 10 seconds during which the device answers nothing else.",
         ].join(" "),
         inputSchema: z.object({

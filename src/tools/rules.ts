@@ -222,7 +222,7 @@ export const rulesActivate: ToolDefinition = {
               hint:
                 after?.status_text === "RUN"
                   ? "The device runs the previous rules again. Fix the file and try again."
-                  : "The device is not running (see details.status). After checking, device_control RUN (admin profile) resumes it.",
+                  : "The device is not running (see details.status). After checking, device_control RUN resumes it.",
               details: {
                 target,
                 ...(restored !== undefined && { restored_previous_root: restored }),

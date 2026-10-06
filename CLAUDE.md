@@ -44,7 +44,7 @@ auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
 
 ## Architektur
 
-Umgesetzt: alle 22 Tools (Profile read 11 · operate 13 · develop 19 · admin 22), `STATE_DIR` mit Audit-Log und
+Umgesetzt: alle 23 Tools (Profile read 11 · operate 13 · develop 21 · admin 23), `STATE_DIR` mit Audit-Log und
 Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Docker, Doku).
 
 - **Transportfreier Kern.** `src/index.ts` (stdio-Adapter: Config laden, `serveStdio`) → `src/server.ts`
@@ -79,8 +79,12 @@ Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Do
   Client-Konfiguration, `WEBSPS_PROFILE` bzw. top-level `profile` in der JSON), **kein** Profil pro Gerät — wer
   unterschiedliche Rechte je Gerät braucht, legt einen zweiten Eintrag an. Der Agent kann das Profil nicht ändern.
   `tools/list` zeigt nur die Tools des konfigurierten Profils.
-  Riskante Tools (`config_set`, `device_control`, `device_reboot`) nur im Profil `admin`. Am Gerät zusätzlich je
-  Profil ein eigener Benutzer mit passender `PERM_*`-Bitmaske.
+  Rollen: `develop` = programmieren inkl. RUN/STOP/NTPSYNC (`device_control`) und REINIT/REBOOT
+  (`device_reboot`); `admin` = zusätzlich **konfigurieren** (`config_set`, `device_maintenance`: Uhr stellen,
+  Logdatei löschen). Am Gerät je Profil ein eigener Benutzer mit passender `PERM_*`-Maske: read 18925,
+  operate 84463, develop 118783 (ohne `CONFIG_WRITE`, mit `SYSTEM_CONTROL`; setzt voraus, dass die Firmware
+  `io.label_set` über `RULES_WRITE` statt `CONFIG_WRITE` prüft), admin 122879. `CONFIG_SECRETS` und
+  `CONFIG_CRITICAL` bekommt kein Agentenprofil.
 - **`STATE_DIR`** (`WEBSPS_STATE_DIR` > `state_dir` in der JSON > `$XDG_STATE_HOME`/`~/.local/state/websps-mcp`
   bzw. `%LOCALAPPDATA%\websps-mcp\state`), pro Gerät ein Unterordner `<alias>/`, wird erst beim ersten Schreiben
   angelegt. Inhalt: `console.jsonl` (Konsolen-Akkumulator, `src/device/consoleLog.ts`: holt bei jedem `log_read`
@@ -121,25 +125,28 @@ Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Do
 
 - HTTP-Status ist **immer 200**; `ok` / `error.code` im Body prüfen. Gerätefehler als MCP-`isError` mit
   `{code, name, hint}` abbilden. Falsches Passwort und fehlende Auth liefern beide Code 1.
+- **Firmware-Stände unterscheiden sich, `firmware_version` aber nicht** (`V5.0B Analog`). Neuere Firmware meldet
+  Fähigkeiten in `api.describe.api_features` (z.B. `io_read_ct_value_alias`, `io_read_analog_channels`,
+  `files_list_name_aliases`, `config_schema_section`). Der Server muss auf beiden Ständen funktionieren; bisher
+  kommt er ohne Feature-Abfragen aus (Rückfälle greifen nur bei Fehlern).
 - `io.read` liefert für `Cx.x`/`Tx.x` nur das Flag „Sollwert erreicht“, nicht den Zähl-/Zeitwert. Neuere Firmware
-  kennt dafür `"mode":"value"` und liest zusätzlich `AE`/`AA`/`SW` direkt; ältere Firmware meldet bei
-  `AE`/`AA`/`SW` einen Fehler pro Eintrag und **ignoriert `mode` stillschweigend** (liefert dann das Flag). Die
-  Firmware-Version unterscheidet beide nicht (`V5.0B Analog`) — deshalb `mode` nicht verwenden: `io_read` liest
-  Werte als `CVx.x`/`TVx.x` (Namensschema der Visu) und holt alles, was `io.read` nicht kennt, aus `io.read_all`.
-  Das ist auf beiden Firmware-Ständen korrekt. Fehler pro Batch-Eintrag sind deutsche Freitexte — nicht auf den
-  Text prüfen. Immer die Batch-Form `{"channels":[…]}` senden: die Einzelform `{"channel":…}` meldet bei
-  unbekannten Kanälen irreführend „Parameter 'channel' nicht vorhanden“.
+  liest `CVx.x`/`TVx.x` und `AE`/`AA`/`SW` direkt; ältere meldet dafür einen Fehler pro Eintrag — `io_read` holt
+  dann die Werte aus `io.read_all`. `"mode":"value"` nicht verwenden: ältere Firmware ignoriert es stillschweigend.
+  Fehler pro Batch-Eintrag sind deutsche Freitexte — nicht auf den Text prüfen. Immer die Batch-Form
+  `{"channels":[…]}` senden (die Einzelform meldet auf älterer Firmware unbekannte Kanäle irreführend).
 - `api.describe` braucht keine Berechtigung (gut für Erreichbarkeitsprüfung); Hilfeseiten liegen unter
   `/system/html/` (per GET, HTTP-Status dort normal; `dat_rul.htm` ≈ 74 KB HTML).
-- **Jeder API-Request** erzeugt eine Konsolenzeile „API Basic-Auth OK …“ — eigene Zugriffe (z.B. `sample`) füllen
-  den 25-Zeilen-Ringpuffer.
-- `logs.search` durchsucht die ganze Logdatei, dauert **~10 s** (Gerät blockiert, Timeout 30 s), ist
-  **case-sensitiv** und kürzt Treffer auf ~60 Zeichen. `system.log` liefert neueste Einträge zuerst.
-- `files.list` lehnt auf der aktuellen Firmware **jedes** Verzeichnis ab („Ungültiges Verzeichnis“) — für `rules`
-  deshalb `rules.list` (liefert auch die Root-Datei). `config.get_section` liefert für jede Sektion `{}`, das Schema
-  hat kein Sektionsfeld → nicht verwenden. `config.schema` ist paginiert (`page`, 30 je Seite).
-  `config.get_multi` lässt unbekannte Schlüssel stillschweigend weg; `config.get` liefert mit `config_secrets`
-  Passwörter im Klartext.
+- Ältere Firmware schreibt bei **jedem API-Request** eine Konsolenzeile „API Basic-Auth OK …“ (füllt den
+  25-Zeilen-Ringpuffer); neuere nur noch Fehlversuche, dafür „AUDIT: …“-Zeilen bei Schreibzugriffen.
+- `logs.search` durchsucht die ganze Logdatei, dauert **~10 s** (Gerät blockiert, Timeout 30 s); ältere Firmware
+  ist case-sensitiv und kürzt Logzeilen auf ~60 Zeichen. `system.log` liefert neueste Einträge zuerst.
+- `files.list {directory, page}`: Namen ohne Größe, 32 je Seite, mit `"-"` aufgefüllt (`listFiles` in
+  `tools/files.ts` blättert und filtert). Ältere Firmware lehnt jedes Verzeichnis ab. Für `rules` immer
+  `rules.list` (Größen und Root-Datei).
+- `config.schema` ist paginiert (`page`, 30 je Seite), neuere Firmware liefert pro Feld `section`;
+  `config.get_section` funktioniert erst auf neuerer Firmware (ältere: immer `{}`). `config.get_multi` lässt
+  unbekannte Schlüssel stillschweigend weg. `config.get`/`get_section` liefern mit `config_secrets` Passwörter im
+  Klartext — deshalb maskiert `config_get` immer.
 - `/files` ist **immer POST**, auch beim Lesen; Schreiben über das Wire-Format mit `---CONTENT---`-Trenner, ab
   ~6KB in Chunks (`BODY_SIZE=8192`), max. 32767 Byte pro Datei, kein Offset/Range-Lesen. Fehler kommen beim Lesen
   als JSON-Body statt Inhalt; `file_read` hasht deshalb zuerst und prüft den Inhalt per CRC (unterscheidet Inhalt
@@ -164,8 +171,8 @@ Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Do
 - `io.write`: Batch `{"writes":[{channel,value}]}` mit Ergebnis pro Eintrag; Analogwerte werden **ungeprüft**
   umgewandelt (`"abc"` → 0, Erfolg!) — Werte prüft `writeValue` in `tools/ioWrite.ts`. `SW`-Bereich 0–100 prüft
   das Gerät. Labels bis 100 Byte verifiziert.
-- `files.delete` erwartet `{directory, filename}` (nicht `path`) und scheitert wie `files.list` an der
-  Verzeichnisprüfung — Löschen außerhalb `rules/` geht über die API derzeit nicht.
+- `files.delete` erwartet `{directory, filename}` (nicht `path`); auf älterer Firmware scheitert es wie
+  `files.list` an der Verzeichnisprüfung.
 
 ## Server-Invarianten (im Code erzwingen, nicht im Prompt)
 

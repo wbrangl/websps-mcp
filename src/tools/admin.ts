@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { looksSecret, MASK } from "../device/configSchema.js";
+import type { Device } from "../device/registry.js";
 import {
   auditedHandler,
   DESTRUCTIVE,
@@ -75,21 +76,19 @@ const timeSchema = z
 
 export const deviceControl: ToolDefinition = {
   name: "device_control",
-  profile: "admin",
+  profile: "develop",
   register(server, app) {
     server.registerTool(
       "device_control",
       {
-        title: "Control device",
+        title: "Run or stop the program",
         description: [
-          "Operating commands: RUN / STOP the rules program, RMLOG deletes the device log file,",
-          "NTPSYNC requests a time sync (only with NTP as time source), SET_TIME sets the device clock from `time` (not persisted).",
-          "Restarts are a separate tool (device_reboot).",
+          "RUN / STOP the rules program, e.g. to resume after a failed rules_activate;",
+          "NTPSYNC requests a time sync (only with NTP as time source). Restarts: device_reboot.",
         ].join(" "),
         inputSchema: z.object({
           device: deviceParam(app),
-          command: z.enum(["RUN", "STOP", "RMLOG", "NTPSYNC", "SET_TIME"]),
-          time: timeSchema.optional(),
+          command: z.enum(["RUN", "STOP", "NTPSYNC"]),
         }),
         annotations: DESTRUCTIVE,
       },
@@ -97,24 +96,58 @@ export const deviceControl: ToolDefinition = {
         app,
         "device_control",
         (args) => ({ ...args }),
-        async (device, { command, time }) => {
-          if (command === "SET_TIME") {
-            if (time === undefined) throw invalidInput("SET_TIME needs `time`");
-            const params = Object.fromEntries(
-              Object.entries(time).map(([k, v]) => [`manual_${k}`, v]),
-            );
-            return {
-              device: device.alias,
-              command,
-              result: await device.client.call<Record<string, unknown>>("system.set_time", params),
-            };
+        async (device, { command }) => ({
+          device: device.alias,
+          command,
+          result: await control(device, command),
+        }),
+      ),
+    );
+  },
+};
+
+/** Always the command names: the digit aliases are a legacy telnet compatibility layer. */
+function control(device: Device, command: string) {
+  return device.client.call<Record<string, unknown>>("system.control", { command });
+}
+
+export const deviceMaintenance: ToolDefinition = {
+  name: "device_maintenance",
+  profile: "admin",
+  register(server, app) {
+    server.registerTool(
+      "device_maintenance",
+      {
+        title: "Device maintenance",
+        description: [
+          "Administrative device actions: SET_TIME sets the device clock from `time` (runtime only, not persisted),",
+          "RMLOG deletes the device log file.",
+        ].join(" "),
+        inputSchema: z.object({
+          device: deviceParam(app),
+          action: z.enum(["SET_TIME", "RMLOG"]),
+          time: timeSchema.optional(),
+        }),
+        annotations: DESTRUCTIVE,
+      },
+      auditedHandler(
+        app,
+        "device_maintenance",
+        (args) => ({ ...args }),
+        async (device, { action, time }) => {
+          if (action === "RMLOG") {
+            if (time !== undefined) throw invalidInput("`time` is only used with SET_TIME");
+            return { device: device.alias, action, result: await control(device, "RMLOG") };
           }
-          if (time !== undefined) throw invalidInput("`time` is only used with SET_TIME");
-          // Always the command names: the digit aliases are a legacy telnet compatibility layer.
-          const result = await device.client.call<Record<string, unknown>>("system.control", {
-            command,
-          });
-          return { device: device.alias, command, result };
+          if (time === undefined) throw invalidInput("SET_TIME needs `time`");
+          const params = Object.fromEntries(
+            Object.entries(time).map(([k, v]) => [`manual_${k}`, v]),
+          );
+          return {
+            device: device.alias,
+            action,
+            result: await device.client.call<Record<string, unknown>>("system.set_time", params),
+          };
         },
       ),
     );
@@ -123,7 +156,7 @@ export const deviceControl: ToolDefinition = {
 
 export const deviceReboot: ToolDefinition = {
   name: "device_reboot",
-  profile: "admin",
+  profile: "develop",
   register(server, app) {
     server.registerTool(
       "device_reboot",
@@ -139,9 +172,7 @@ export const deviceReboot: ToolDefinition = {
         "device_reboot",
         (args) => ({ ...args }),
         async (device, { mode }) => {
-          const result = await device.client.call<Record<string, unknown>>("system.control", {
-            command: mode,
-          });
+          const result = await control(device, mode);
           // Cached device documents and layouts may change with a firmware update before a reboot.
           device.docs.clear();
           return { device: device.alias, mode, result };

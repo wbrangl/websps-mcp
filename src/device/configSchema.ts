@@ -3,6 +3,8 @@ import type { DeviceClient } from "./client.js";
 export interface ConfigField {
   name: string;
   type: string;
+  /** CHIP.INI section; reported by newer firmware. */
+  section?: string;
   secret: boolean;
   critical: boolean;
   restart_required: boolean;

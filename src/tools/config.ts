@@ -13,23 +13,36 @@ export const configGet: ToolDefinition = {
       {
         title: "Read configuration",
         description: [
-          `Read device configuration values: \`keys\` (up to ${MAX_KEYS} field names) or \`schema: true\` for all fields`,
-          'with type and whether changing them is critical or needs a restart. Passwords and other secrets are always masked as "***".',
+          `Read device configuration: \`keys\` (up to ${MAX_KEYS} field names), \`section\` (e.g. "IP", see the \`section\` of each field)`,
+          "or `schema: true` for all fields with type, section and whether changing them is critical or needs a restart.",
+          'Passwords and other secrets are always masked as "***".',
         ].join(" "),
         inputSchema: z.object({
           device: deviceParam(app),
           keys: z.array(z.string().min(1)).min(1).max(MAX_KEYS).optional(),
+          section: z.string().min(1).optional(),
           schema: z.boolean().optional(),
         }),
         annotations: READ_ONLY,
       },
-      handler(async ({ device: alias, keys, schema }) => {
+      handler(async ({ device: alias, keys, section, schema }) => {
         const device = app.devices.resolve(alias);
-        if ((keys === undefined) === (schema !== true)) {
-          throw invalidInput("Pass either `keys` or `schema: true`");
+        const modes = [keys !== undefined, section !== undefined, schema === true];
+        if (modes.filter(Boolean).length !== 1) {
+          throw invalidInput("Pass exactly one of `keys`, `section` or `schema: true`");
         }
-        if (keys === undefined) {
+        if (schema === true) {
           return { device: device.alias, fields: await device.configSchema.get() };
+        }
+        if (section !== undefined) {
+          const values = await device.client.call<Record<string, unknown>>("config.get_section", {
+            section,
+          });
+          return {
+            device: device.alias,
+            section,
+            values: await device.configSchema.mask(values),
+          };
         }
         const unique = [...new Set(keys)];
         // get_multi silently drops unknown keys; report them instead.

@@ -100,6 +100,10 @@ describe.each([
     expect(read.content).toBe("A0.0 = E0.0 && M0.0;\r\nM0.0 = S0.0;\r\n");
     expect(typeof read.crc16).toBe("number");
 
+    const mails = parse(
+      await client.callTool({ name: "file_list", arguments: { directory: "mails" } }),
+    );
+    expect(mails.files).toEqual(["HELLO.TXT"]);
     const list = parse(
       await client.callTool({ name: "file_list", arguments: { directory: "rules" } }),
     );
@@ -132,6 +136,10 @@ describe.each([
     );
     expect(body.values).toEqual({ device_name: "Test", admin_password: "***" });
     expect(body.unknown_keys).toEqual(["nope"]);
+    const users = parse(
+      await client.callTool({ name: "config_get", arguments: { section: "USERS" } }),
+    );
+    expect(users.values).toEqual({ admin_password: "***" });
     const schema = parse(
       await client.callTool({ name: "config_get", arguments: { schema: true } }),
     );

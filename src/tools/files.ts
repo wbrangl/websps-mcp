@@ -8,6 +8,7 @@ import {
   parseFilePath,
   TEXT_DIRECTORIES,
 } from "../device/files.js";
+import type { Device } from "../device/registry.js";
 import {
   auditedHandler,
   DESTRUCTIVE,
@@ -49,14 +50,30 @@ export const fileList: ToolDefinition = {
             files: (result.files ?? []).filter((f) => !isInternalRulesFile(f.name)),
           };
         }
-        const result = await device.client.call<Record<string, unknown>>("files.list", {
-          directory,
-        });
-        return { device: device.alias, directory, ...result };
+        return { device: device.alias, directory, files: await listFiles(device, directory) };
       }),
     );
   },
 };
+
+const MAX_LIST_PAGES = 20;
+
+interface FilesPage {
+  limit?: number;
+  files?: string[];
+}
+
+/** `files.list` pages names (32 per page) and pads each page with "-". */
+async function listFiles(device: Device, directory: string): Promise<string[]> {
+  const names: string[] = [];
+  for (let page = 0; page < MAX_LIST_PAGES; page++) {
+    const result = await device.client.call<FilesPage>("files.list", { directory, page });
+    const real = (result.files ?? []).filter((name) => name !== "-" && name !== "");
+    names.push(...real);
+    if (real.length < (result.limit ?? 32)) break;
+  }
+  return names;
+}
 
 export const fileRead: ToolDefinition = {
   name: "file_read",

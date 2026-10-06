@@ -31,8 +31,8 @@ const crc = (text: string) => crc16Xmodem(Buffer.from(text));
 describe.each([
   ["read", 11],
   ["operate", 13],
-  ["develop", 19],
-  ["admin", 22],
+  ["develop", 21],
+  ["admin", 23],
 ])("profile %s", (profile, count) => {
   it(`shows ${count} tools`, async () => {
     const c = await connectServer({ url: device.url, stateDir, env: { WEBSPS_PROFILE: profile } });
@@ -153,6 +153,9 @@ describe("files, labels and configuration", () => {
     ).toContain("rules_write");
     const svg = await call("file_write", { path: "svg/P.SVG", content: "<svg/>" });
     expect(svg.body).toMatchObject({ created: true, bytes: 6 });
+    const deleted = await call("file_delete", { path: "svg/P.SVG" });
+    expect(deleted.body).toMatchObject({ result: { success: true } });
+    expect(device.state.files["svg/P.SVG"]).toBeUndefined();
   });
 
   it("sets labels and refreshes the label cache", async () => {
@@ -175,11 +178,12 @@ describe("files, labels and configuration", () => {
     expect(device.state.status.status_text).toBe("STOP");
     await call("device_reboot", { mode: "REINIT" });
     expect(device.state.status.status_text).toBe("RUN");
-    const time = await call("device_control", {
-      command: "SET_TIME",
+    const time = await call("device_maintenance", {
+      action: "SET_TIME",
       time: { hour: 8, minute: 30 },
     });
     expect(time.body.result).toEqual({ manual_hour: 8, manual_minute: 30 });
+    expect((await call("device_maintenance", { action: "SET_TIME" })).body.error.code).toBe(1007);
   });
 });
 

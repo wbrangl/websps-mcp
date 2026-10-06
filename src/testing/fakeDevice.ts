@@ -51,9 +51,30 @@ const STATUS = {
 } as const;
 
 const CONFIG_FIELDS = [
-  { name: "device_name", type: "string", secret: false, critical: false, restart_required: false },
-  { name: "admin_password", type: "string", secret: true, critical: true, restart_required: false },
-  { name: "time_source", type: "bool", secret: false, critical: false, restart_required: false },
+  {
+    name: "device_name",
+    type: "string",
+    section: "DEVICE",
+    secret: false,
+    critical: false,
+    restart_required: false,
+  },
+  {
+    name: "admin_password",
+    type: "string",
+    section: "USERS",
+    secret: true,
+    critical: true,
+    restart_required: false,
+  },
+  {
+    name: "time_source",
+    type: "bool",
+    section: "TIME",
+    secret: false,
+    critical: false,
+    restart_required: false,
+  },
 ];
 const SCHEMA_PAGE_SIZE = 2;
 
@@ -327,8 +348,15 @@ function answer(state: FakeDeviceState, req: IncomingMessage, body: string): Ans
       delete state.files[`rules/${name}`];
       return { ok: true, result: { name, deleted: true } };
     }
-    case "files.delete":
-      return fail(3, `Ungültiges Verzeichnis: ${params?.directory}`);
+    case "files.delete": {
+      const path = `${params?.directory}/${params?.filename}`;
+      if (state.files[path] === undefined) return fail(4, "Datei nicht gefunden");
+      delete state.files[path];
+      return {
+        ok: true,
+        result: { directory: params?.directory, filename: params?.filename, success: true },
+      };
+    }
     case "system.info":
       return { ok: true, result: { firmware_version: "TEST", rules_initialized: "TEST.TXT" } };
     case "system.mbox":
@@ -364,11 +392,22 @@ function answer(state: FakeDeviceState, req: IncomingMessage, body: string): Ans
             })),
         },
       };
-    case "files.list":
-      return {
-        ok: false,
-        error: { code: 3, message: `Ungültiges Verzeichnis: ${params?.directory}` },
-      };
+    case "files.list": {
+      // Pages of names padded with "-", like the device (small page size to exercise paging).
+      const prefix = `${params?.directory}/`;
+      const names = Object.keys(state.files)
+        .filter((path) => path.startsWith(prefix))
+        .map((path) => path.slice(prefix.length));
+      const page = Number(params?.page ?? 0);
+      const files = names.slice(page * 2, page * 2 + 2);
+      while (files.length < 2) files.push("-");
+      return { ok: true, result: { directory: params?.directory, page, limit: 2, files } };
+    }
+    case "config.get_section": {
+      const section = String(params?.section);
+      const keys = CONFIG_FIELDS.filter((f) => f.section === section).map((f) => f.name);
+      return { ok: true, result: Object.fromEntries(keys.map((k) => [k, state.config[k]])) };
+    }
     case "config.schema": {
       const page = Number(params?.page ?? 0);
       const fields = CONFIG_FIELDS.slice(page * SCHEMA_PAGE_SIZE, (page + 1) * SCHEMA_PAGE_SIZE);
