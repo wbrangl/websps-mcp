@@ -22,6 +22,9 @@ Pipe an `node dist/index.js` schicken (stdout = Protokoll, Logs nach stderr).
 
 Private Hinweise (Designunterlagen, Testgerät) stehen in `CLAUDE.local.md`.
 
+`README.md` ist die öffentliche Kundendoku (Englisch): bei Änderungen an Tools, Profilen, Konfiguration,
+Gerätemasken oder Fehlercodes mitziehen.
+
 Dieses Repo wird unter MIT-Lizenz veröffentlicht: Keine Zugangsdaten, Kundennamen, internen IPs oder Inhalte aus
 nicht öffentlichen Unterlagen in committete Dateien, Commits oder Testdaten übernehmen.
 
