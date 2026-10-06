@@ -1,3 +1,5 @@
+<p><img src="docs/websps-wordmark.svg" alt="Web@SPS" height="56"></p>
+
 # websps-mcp
 
 An [MCP](https://modelcontextprotocol.io) server that lets AI agents read and control **Web@SPS** PLC
@@ -43,7 +45,7 @@ For one device, environment variables are enough. Add the server to your client'
       "command": "npx",
       "args": ["-y", "websps-mcp@0.1.0"],
       "env": {
-        "WEBSPS_URL": "http://192.0.2.10",
+        "WEBSPS_URL": "http://192.168.2.102",
         "WEBSPS_USER": "api_user",
         "WEBSPS_PASSWORD": "change-me",
         "WEBSPS_PROFILE": "read"
@@ -53,14 +55,15 @@ For one device, environment variables are enough. Add the server to your client'
 }
 ```
 
-Always pin the version. `npx` fetches the package on first start, which needs internet access and a
+`192.168.2.102` is the factory default address of a Web@SPS (see the Web@SPS manual); use your
+device's address. Always pin the version. `npx` fetches the package on first start, which needs internet access and a
 working npm cache.
 
 With Claude Code the same is:
 
 ```sh
 claude mcp add websps \
-  -e WEBSPS_URL=http://192.0.2.10 -e WEBSPS_USER=api_user \
+  -e WEBSPS_URL=http://192.168.2.102 -e WEBSPS_USER=api_user \
   -e WEBSPS_PASSWORD=change-me -e WEBSPS_PROFILE=read \
   -- npx -y websps-mcp@0.1.0
 ```
@@ -80,12 +83,12 @@ Pass a JSON file with `--config <path>` or `WEBSPS_CONFIG`:
   "devices": [
     {
       "alias": "pool",
-      "url": "http://192.0.2.10",
+      "url": "http://192.168.2.102",
       "auth": { "user": "api_user", "password_env": "WEBSPS_POOL_PW" }
     },
     {
       "alias": "garden",
-      "url": "http://192.0.2.11",
+      "url": "http://192.168.2.103",
       "auth": { "user": "api_user", "password_file": "/etc/websps/garden.pw" },
       "timeout_ms": 8000,
       "timeouts_ms": { "io.read_all": 10000 }
@@ -316,7 +319,7 @@ of `npx`:
     "websps": {
       "command": "node",
       "args": ["/path/to/websps-mcp/dist/index.js"],
-      "env": { "WEBSPS_URL": "http://192.0.2.10", "WEBSPS_USER": "api_user", "WEBSPS_PASSWORD": "change-me" }
+      "env": { "WEBSPS_URL": "http://192.168.2.102", "WEBSPS_USER": "api_user", "WEBSPS_PASSWORD": "change-me" }
     }
   }
 }
