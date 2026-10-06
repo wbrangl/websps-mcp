@@ -102,9 +102,13 @@ Noch offen u.a.: Sperrdatei pro Gerät, `STATE_DIR`, alle schreibenden Tools.
 
 - HTTP-Status ist **immer 200**; `ok` / `error.code` im Body prüfen. Gerätefehler als MCP-`isError` mit
   `{code, name, hint}` abbilden. Falsches Passwort und fehlende Auth liefern beide Code 1.
-- `io.read` kennt **keine Wert-Operanden** (Zählwerte `CV`, Zeitwerte `TV`, Analog `AE`/`AA`/`SW` → Eintrag mit
-  `error`); `io_read` holt diese deshalb aus `io.read_all`. Fehler pro Batch-Eintrag sind deutsche Freitexte — nicht
-  auf den Text prüfen. Immer die Batch-Form `{"channels":[…]}` senden: die Einzelform `{"channel":…}` meldet bei
+- `io.read` liefert für `Cx.x`/`Tx.x` nur das Flag „Sollwert erreicht“, nicht den Zähl-/Zeitwert. Neuere Firmware
+  kennt dafür `"mode":"value"` und liest zusätzlich `AE`/`AA`/`SW` direkt; ältere Firmware meldet bei
+  `AE`/`AA`/`SW` einen Fehler pro Eintrag und **ignoriert `mode` stillschweigend** (liefert dann das Flag). Die
+  Firmware-Version unterscheidet beide nicht (`V5.0B Analog`) — deshalb `mode` nicht verwenden: `io_read` liest
+  Werte als `CVx.x`/`TVx.x` (Namensschema der Visu) und holt alles, was `io.read` nicht kennt, aus `io.read_all`.
+  Das ist auf beiden Firmware-Ständen korrekt. Fehler pro Batch-Eintrag sind deutsche Freitexte — nicht auf den
+  Text prüfen. Immer die Batch-Form `{"channels":[…]}` senden: die Einzelform `{"channel":…}` meldet bei
   unbekannten Kanälen irreführend „Parameter 'channel' nicht vorhanden“.
 - `api.describe` braucht keine Berechtigung (gut für Erreichbarkeitsprüfung); Hilfeseiten liegen unter
   `/system/html/` (per GET, HTTP-Status dort normal).

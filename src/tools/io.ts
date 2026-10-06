@@ -25,7 +25,8 @@ export const ioRead: ToolDefinition = {
       {
         title: "Read channels",
         description: [
-          "Read current values of Web@SPS operands, e.g. S0.0 (visu switch), A0.0 (output), M0.0 (marker), CV0.0 (counter value), AE0 (analog input).",
+          "Read current values of Web@SPS operands, e.g. S0.0 (visu switch), A0.0 (output), M0.0 (marker), AE0 (analog input).",
+          "Counters/timers: C0.0/T0.0 return only the 'preset reached' flag (0/1); read CV0.0/TV0.0 for the counter/timer value.",
           `Either pass up to ${MAX_BATCH} \`channels\`, or \`all: true\` for the complete state of all operands`,
           '(optionally narrowed with `types`, e.g. ["S","A","AE"]); for bit operands `all` lists only the channels that are 1.',
           "Results include the channel label when one is set on the device.",
