@@ -145,8 +145,8 @@ Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Do
   25-Zeilen-Ringpuffer); neuere nur noch Fehlversuche, dafür „AUDIT: …“-Zeilen bei Schreibzugriffen.
 - `logs.search`: aktuelle Firmware durchsucht standardmäßig nur das Dateiende (16 KB, ohne genug Treffer bis
   128 KB; ~0,7–5 s) und meldet `searched_from_byte`/`file_size` (`log_read` leitet daraus `complete` ab);
-  `full_scan:true` durchsucht alles (~11 s bei 336 KB, bis ~35 s bei 1 MB; Gerät blockiert, Timeout 45 s), ein
-  nicht-boolesches `full_scan` wird still ignoriert. Ältere Firmware durchsucht immer alles, ist case-sensitiv und
+  `full_scan:true` durchsucht alles (~11 s bei 336 KB, bis ~35 s bei 1 MB; Gerät blockiert, Timeout 45 s); ein
+  nicht-boolesches `full_scan` (wie unbekanntes `mode`) ergibt PARAMS — der Server sendet nur `true`. Ältere Firmware durchsucht immer alles, ist case-sensitiv und
   kürzt Logzeilen auf ~60 Zeichen. `system.log` liefert neueste Einträge zuerst.
 - `files.list {directory, page}`: Namen ohne Größe, 32 je Seite, mit `"-"` aufgefüllt (`listFiles` in
   `tools/files.ts` blättert und filtert). Ältere Firmware lehnt jedes Verzeichnis ab. Für `rules` immer
