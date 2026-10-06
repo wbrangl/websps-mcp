@@ -1,13 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Client } from "@modelcontextprotocol/client";
-import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import type { Client } from "@modelcontextprotocol/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type FakeDevice, startFakeDevice } from "./testing/fakeDevice.js";
-
-const tsx = createRequire(import.meta.url).resolve("tsx/cli");
+import { connectServer, parseResult as parse } from "./testing/mcpClient.js";
 
 let device: FakeDevice;
 let stateDir: string;
@@ -20,29 +17,8 @@ afterAll(async () => {
   await rm(stateDir, { recursive: true, force: true });
 });
 
-async function connect(mode: "legacy" | { pin: string }, env: Record<string, string> = {}) {
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [tsx, "src/index.ts"],
-    env: {
-      PATH: process.env.PATH ?? "",
-      WEBSPS_URL: device.url,
-      WEBSPS_USER: "api_user",
-      WEBSPS_PASSWORD: "secret",
-      WEBSPS_STATE_DIR: stateDir,
-      ...env,
-    },
-    stderr: "ignore",
-  });
-  const client = new Client({ name: "e2e", version: "0" }, { versionNegotiation: { mode } });
-  await client.connect(transport);
-  return client;
-}
-
-function parse(result: Awaited<ReturnType<Client["callTool"]>>) {
-  const first = (result.content as { type: string; text: string }[])[0];
-  return JSON.parse(first?.text ?? "null");
-}
+const connect = (mode: "legacy" | { pin: string }, env: Record<string, string> = {}) =>
+  connectServer({ url: device.url, stateDir, mode, env });
 
 describe.each([
   ["2026-07-28", { pin: "2026-07-28" } as const],

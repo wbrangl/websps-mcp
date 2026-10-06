@@ -1,10 +1,12 @@
 import { join } from "node:path";
 import type { DeviceConfig } from "../config.js";
 import { ServerErrorCode, WebspsError } from "../errors.js";
+import { AuditLog, BackupStore } from "./audit.js";
 import { DeviceClient, type DeviceClientOptions } from "./client.js";
 import { ConfigSchemaCache } from "./configSchema.js";
 import { ConsoleLog } from "./consoleLog.js";
 import { LabelCache } from "./labels.js";
+import { DeviceLock } from "./lock.js";
 import { LayoutCache } from "./readAll.js";
 import { Sampler } from "./sampler.js";
 
@@ -17,6 +19,8 @@ export interface Device {
   configSchema: ConfigSchemaCache;
   consoleLog: ConsoleLog;
   sampler: Sampler;
+  audit: AuditLog;
+  backups: BackupStore;
   /** Static device documents (help pages, operator list), cached for the process lifetime. */
   docs: Map<string, unknown>;
 }
@@ -34,8 +38,12 @@ export class DeviceRegistry {
     overrides: Partial<DeviceClientOptions> = {},
   ) {
     this.devices = configs.map((config) => {
-      const client = new DeviceClient({ ...config, ...overrides });
       const dir = join(stateDir, config.alias);
+      const client = new DeviceClient({
+        ...config,
+        lock: new DeviceLock(join(dir, "device.lock")),
+        ...overrides,
+      });
       const device = {
         alias: config.alias,
         url: client.url,
@@ -45,6 +53,8 @@ export class DeviceRegistry {
         configSchema: new ConfigSchemaCache(client),
         consoleLog: new ConsoleLog(client, join(dir, "console.jsonl")),
         docs: new Map<string, unknown>(),
+        audit: new AuditLog(join(dir, "audit.jsonl")),
+        backups: new BackupStore(join(dir, "backups")),
       } as Device;
       device.sampler = new Sampler(device, join(dir, "samples"));
       return device;

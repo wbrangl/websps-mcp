@@ -32,12 +32,12 @@ const HINTS: Record<number, string> = {
   [DeviceErrorCode.AUTH]:
     "Device rejected the credentials or the IP is locked out. Not retried automatically; check the configured user/password.",
   [DeviceErrorCode.FORBIDDEN]:
-    "The device user lacks the permission for this method. Ask the administrator to adjust the user's permission mask.",
+    "The device refused the operation: usually the device user lacks the permission, sometimes the object is protected (see message).",
   [DeviceErrorCode.PARAMS]: "Invalid or missing parameter. Fix the arguments; do not retry as is.",
   [DeviceErrorCode.NOT_FOUND]: "The key, file or channel does not exist on the device.",
   [DeviceErrorCode.BUSY]: "Device stayed busy after several retries. Try again later.",
   [DeviceErrorCode.VALIDATION]:
-    "Value rejected by the device (range, file name format or expected_hash conflict).",
+    "The device rejected the value or the request in its current state (see message); do not retry unchanged.",
   [DeviceErrorCode.INTERNAL]: "Internal device error. Do not retry; check the device log.",
   [ServerErrorCode.SERVER_ERROR]:
     "Unexpected server error; details are in the server's stderr log.",
@@ -60,18 +60,26 @@ export interface ErrorPayload {
   message: string;
   hint?: string;
   device?: string;
+  details?: unknown;
 }
 
 export class WebspsError extends Error {
   readonly code: number;
   readonly hint: string | undefined;
   readonly device: string | undefined;
+  /** Structured context for the caller, e.g. validation errors per line. */
+  readonly details: unknown;
 
-  constructor(code: number, message: string, options: { device?: string; hint?: string } = {}) {
+  constructor(
+    code: number,
+    message: string,
+    options: { device?: string; hint?: string; details?: unknown } = {},
+  ) {
     super(message);
     this.code = code;
     this.hint = options.hint ?? HINTS[code];
     this.device = options.device;
+    this.details = options.details;
   }
 
   get errorName(): string {
@@ -85,6 +93,7 @@ export class WebspsError extends Error {
       message: this.message,
       ...(this.hint !== undefined && { hint: this.hint }),
       ...(this.device !== undefined && { device: this.device }),
+      ...(this.details !== undefined && { details: this.details }),
     };
   }
 }

@@ -34,7 +34,21 @@ export interface FakeDeviceState {
   log: { seq: number; timestamp: string; message: string }[];
   used: Record<string, number[]>;
   config: Record<string, unknown>;
+  /** Configured and loaded root rules file. */
+  root: string;
+  loaded: string;
+  status: { status_code: number; status_text: string };
+  /** Writing the key channel also sets the value channel (stands in for a rules line). */
+  mirror: Record<string, string>;
+  /** Partial chunked uploads by path and action. */
+  uploads: Record<string, Buffer>;
 }
+
+const STATUS = {
+  RUN: { status_code: 1, status_text: "RUN" },
+  STOP: { status_code: 0, status_text: "STOP" },
+  RULES: { status_code: -1, status_text: "RULES" },
+} as const;
 
 const CONFIG_FIELDS = [
   { name: "device_name", type: "string", secret: false, critical: false, restart_required: false },
@@ -77,6 +91,11 @@ export function defaultState(): FakeDeviceState {
     })),
     used: { S: [1, 0, 0, 0, 0, 0, 0, 0], M: [2, 1, 0, 0, 0, 0, 0, 0] },
     config: { device_name: "Test", admin_password: "pw", time_source: false },
+    root: "TEST.TXT",
+    loaded: "TEST.TXT",
+    status: { ...STATUS.RUN },
+    mirror: { "S5.0": "A0.7" },
+    uploads: {},
   };
 }
 
@@ -131,8 +150,20 @@ function authorized(state: FakeDeviceState, req: IncomingMessage): boolean {
   return req.headers.authorization === expected;
 }
 
+const SEPARATOR = "\n---CONTENT---\n";
+const fail = (code: number, message: string): Answer => ({ ok: false, error: { code, message } });
+
 /** `/files`: raw content on success, a JSON error body otherwise. */
 function files(state: FakeDeviceState, req: IncomingMessage, body: string): string | Answer {
+  const split = body.indexOf(SEPARATOR);
+  if (split >= 0) {
+    if (!authorized(state, req)) return fail(1, "Nicht angemeldet");
+    return upload(
+      state,
+      JSON.parse(body.slice(0, split)),
+      Buffer.from(body.slice(split + SEPARATOR.length)),
+    );
+  }
   const { path, action } = JSON.parse(body) as { path: string; action?: string };
   state.calls.push(`/files ${action ?? "read"} ${path}`);
   if (!authorized(state, req))
@@ -148,6 +179,67 @@ function files(state: FakeDeviceState, req: IncomingMessage, body: string): stri
     return { ok: true, result: { crc16: crc16Xmodem(bytes), bytes: bytes.length } };
   }
   return content;
+}
+
+interface UploadHeader {
+  path: string;
+  action?: string;
+  chunk?: number;
+  chunks?: number;
+  expected_hash?: number;
+}
+
+function upload(state: FakeDeviceState, header: UploadHeader, content: Buffer): Answer {
+  const { path, action } = header;
+  state.calls.push(`/files ${action ?? "write"} ${path}`);
+  const key = `${action ?? "write"} ${path}`;
+  const sofar = Buffer.concat([state.uploads[key] ?? Buffer.alloc(0), content]);
+  const chunks = header.chunks ?? 1;
+  if ((header.chunk ?? 0) < chunks - 1) {
+    state.uploads[key] = sofar;
+    return { ok: true, result: { chunk_received: (header.chunk ?? 0) + 1, chunks_total: chunks } };
+  }
+  delete state.uploads[key];
+  const text = sofar.toString();
+
+  if (action === "validate") {
+    const errors = text
+      .split("\r\n")
+      .flatMap((line, i) =>
+        line.includes("BAD") ? [{ line: i + 1, code: 13, message: "VKE fehlt" }] : [],
+      );
+    return {
+      ok: true,
+      result: {
+        valid: errors.length === 0,
+        error_count: errors.length,
+        errors,
+        warning_count: 0,
+        warnings: [],
+      },
+    };
+  }
+  const dir = path.split("/")[0] ?? "";
+  if (!["rules", "mails", "svg", "htm"].includes(dir)) return fail(2, "Schreiben nicht erlaubt");
+  const name = path.slice(dir.length + 1);
+  if (dir === "rules" && !/^[A-Z0-9_-]{1,8}\.TXT$/.test(name)) return fail(3, "8.3-Format .TXT");
+  const old = state.files[path];
+  if (old !== undefined && header.expected_hash !== undefined) {
+    if (crc16Xmodem(Buffer.from(old)) !== header.expected_hash)
+      return fail(6, "expected_hash stimmt nicht");
+  }
+  const bak = path.replace(/\.[^.]+$/, ".BAK");
+  if (old !== undefined) state.files[bak] = old;
+  state.files[path] = text;
+  return {
+    ok: true,
+    result: {
+      path,
+      bytes: sofar.length,
+      backup: bak.slice(dir.length + 1),
+      is_root: name === state.root,
+    },
+  };
 }
 
 function answer(state: FakeDeviceState, req: IncomingMessage, body: string): Answer {
@@ -167,7 +259,76 @@ function answer(state: FakeDeviceState, req: IncomingMessage, body: string): Ans
     case "api.describe":
       return { ok: true, result: { device_variant: "ANALOG", firmware_version: "TEST" } };
     case "system.status":
-      return { ok: true, result: { status_code: 1, status_text: "RUN" } };
+      return { ok: true, result: state.status };
+    case "system.control": {
+      const command = String(params?.command);
+      if (command === "NTPSYNC") return fail(6, "NTP ist nicht aktiviert (time_source)");
+      if (command === "STOP") state.status = { ...STATUS.STOP };
+      else if (["RUN", "REINIT", "REBOOT"].includes(command)) state.status = { ...STATUS.RUN };
+      else if (command !== "RMLOG") return fail(3, `Ungültiger Command: ${command}`);
+      return { ok: true, result: { command, success: true } };
+    }
+    case "system.set_time":
+      return { ok: true, result: { ...params } };
+    case "io.write": {
+      const writes = (params?.writes as { channel: string; value: string }[] | undefined) ?? [];
+      return {
+        ok: true,
+        result: {
+          writes: writes.map(({ channel, value }) => {
+            const v = Number(value);
+            if (/^(AA|SW)\d/.test(channel)) {
+              if (v < 0 || v > 100) {
+                return { channel, success: false, error: "Wertebereich 0-100 verletzt" };
+              }
+            } else if (/^[SMVU]\d/.test(channel)) {
+              if (v !== 0 && v !== 1) return { channel, success: false, error: "0 oder 1" };
+            } else {
+              return { channel, success: false, error: "nicht schreibbar" };
+            }
+            state.bits[channel] = v;
+            const mirrored = state.mirror[channel];
+            if (mirrored !== undefined) state.bits[mirrored] = v;
+            return { channel, value: v, success: true };
+          }),
+        },
+      };
+    }
+    case "data.clear_recording":
+      return { ok: true, result: { channel: params?.channel, clear_requested: true } };
+    case "io.label_set": {
+      const channel = String(params?.channel);
+      const label = String(params?.label ?? "");
+      if (label === "") delete state.labels[channel];
+      else state.labels[channel] = label;
+      return { ok: true, result: { channel, label, deleted: label === "" } };
+    }
+    case "config.set": {
+      const key = String(params?.key);
+      if (!(key in state.config)) return fail(4, `Unbekannter Config-Schluessel: ${key}`);
+      state.config[key] = params?.value;
+      return { ok: true, result: { key, restart_required: false } };
+    }
+    case "rules.get_root":
+      return { ok: true, result: { configured_root: state.root, loaded_root: state.loaded } };
+    case "rules.set_root": {
+      const name = String(params?.name);
+      if (state.files[`rules/${name}`] === undefined) return fail(4, "Datei nicht gefunden");
+      state.root = name;
+      return { ok: true, result: { configured_root: name, restart_required: true } };
+    }
+    case "rules.reload":
+      return reload(state);
+    case "rules.delete": {
+      const name = String(params?.name);
+      if (name === state.root && params?.force !== true)
+        return fail(2, "Aktive Root-Datei nur mit force");
+      if (state.files[`rules/${name}`] === undefined) return fail(4, "Datei nicht gefunden");
+      delete state.files[`rules/${name}`];
+      return { ok: true, result: { name, deleted: true } };
+    }
+    case "files.delete":
+      return fail(3, `Ungültiges Verzeichnis: ${params?.directory}`);
     case "system.info":
       return { ok: true, result: { firmware_version: "TEST", rules_initialized: "TEST.TXT" } };
     case "system.mbox":
@@ -246,6 +407,24 @@ function answer(state: FakeDeviceState, req: IncomingMessage, body: string): Ans
     default:
       return { ok: false, error: { code: 3, message: `unknown method ${method}` } };
   }
+}
+
+/** Content containing "FAIL" passes validation but fails to load, like a runtime rules error. */
+function reload(state: FakeDeviceState): Answer {
+  const path = `rules/${state.root}`;
+  state.loaded = state.root;
+  if (!(state.files[path] ?? "").includes("FAIL")) {
+    if (state.status.status_code < 0) state.status = { ...STATUS.STOP };
+    return { ok: true, result: { root: state.root, reloaded: true } };
+  }
+  const bak = state.files[path.replace(/\.TXT$/, ".BAK")];
+  if (bak === undefined) {
+    state.status = { ...STATUS.RULES };
+    return fail(6, `RULES_ERROR beim Neuladen von ${state.root} - keine Sicherungskopie`);
+  }
+  state.files[path] = bak;
+  state.status = { ...STATUS.STOP };
+  return fail(6, `RULES_ERROR beim Neuladen von ${state.root} - zurueckgerollt, Zustand STOP`);
 }
 
 function readBody(req: IncomingMessage): Promise<string> {

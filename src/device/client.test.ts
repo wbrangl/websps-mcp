@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { ServerErrorCode, WebspsError } from "../errors.js";
-import { AUTH_LOCKOUT_MS, DeviceClient, MAX_POST_BYTES } from "./client.js";
+import {
+  AUTH_LOCKOUT_MS,
+  DeviceClient,
+  MAX_POST_BYTES,
+  splitChunks,
+  UPLOAD_CHUNK_BYTES,
+} from "./client.js";
 
 type Reply = string | Error | ((body: string) => string | Promise<string>);
 
@@ -9,7 +15,8 @@ function setup(replies: Reply[], password = () => "pw") {
   const bodies: string[] = [];
   const auths: string[] = [];
   const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-    const body = String(init?.body ?? "");
+    const raw = init?.body;
+    const body = raw instanceof Uint8Array ? Buffer.from(raw).toString() : String(raw ?? "");
     bodies.push(body);
     auths.push(String((init?.headers as Record<string, string> | undefined)?.authorization));
     const reply = replies.shift();
@@ -150,5 +157,45 @@ describe("DeviceClient", () => {
     const error = await rejection(client.call("x", { data: "a".repeat(MAX_POST_BYTES) }));
     expect(error.code).toBe(ServerErrorCode.INVALID_INPUT);
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("DeviceClient.upload", () => {
+  it("sends chunks with the hash on each and the content separator", async () => {
+    const { client, bodies } = setup([
+      ok({ chunk_received: 1 }),
+      ok({ chunk_received: 2 }),
+      ok({ done: true }),
+    ]);
+    const content = new Uint8Array(UPLOAD_CHUNK_BYTES * 2 + 10).fill(65);
+    await expect(client.upload("rules/A.TXT", content, { expectedHash: 42 })).resolves.toEqual({
+      done: true,
+    });
+    expect(bodies).toHaveLength(3);
+    const headers = bodies.map((b) => JSON.parse(b.slice(0, b.indexOf("\n---CONTENT---\n"))));
+    expect(headers).toEqual(
+      [0, 1, 2].map((chunk) => ({ path: "rules/A.TXT", chunk, chunks: 3, expected_hash: 42 })),
+    );
+  });
+
+  it("does not let other requests in between the chunks", async () => {
+    const order: string[] = [];
+    const reply = (name: string) => async () => {
+      order.push(name);
+      return ok(null);
+    };
+    const { client } = setup([reply("chunk0"), reply("chunk1"), reply("other")]);
+    const content = new Uint8Array(UPLOAD_CHUNK_BYTES + 1);
+    await Promise.all([client.upload("rules/A.TXT", content), client.call("system.status")]);
+    expect(order).toEqual(["chunk0", "chunk1", "other"]);
+  });
+});
+
+describe("splitChunks", () => {
+  it("never cuts a UTF-8 sequence", () => {
+    const bytes = new TextEncoder().encode("aaä");
+    const chunks = splitChunks(bytes, 3);
+    expect(chunks.map((c) => c.length)).toEqual([2, 2]);
+    expect(new TextDecoder().decode(chunks[1])).toBe("ä");
   });
 });

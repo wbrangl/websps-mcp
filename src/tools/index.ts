@@ -1,15 +1,19 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { profileAllows } from "../profiles.js";
+import { configSet, deviceControl, deviceReboot } from "./admin.js";
 import type { App, ToolDefinition } from "./common.js";
 import { configGet } from "./config.js";
 import { deviceStatus, devicesList } from "./devices.js";
 import { docsGet } from "./docs.js";
-import { fileList, fileRead } from "./files.js";
+import { fileDelete, fileList, fileRead, fileWrite } from "./files.js";
 import { ioLabels, ioRead, ioUsage } from "./io.js";
+import { ioLabelSet, ioWrite, recordingClear } from "./ioWrite.js";
 import { logRead } from "./logs.js";
+import { rulesActivate, rulesValidate, rulesWrite } from "./rules.js";
 import { sample } from "./sample.js";
 
 const TOOLS: readonly ToolDefinition[] = [
+  // read
   devicesList,
   deviceStatus,
   ioRead,
@@ -21,6 +25,20 @@ const TOOLS: readonly ToolDefinition[] = [
   fileList,
   fileRead,
   configGet,
+  // operate
+  ioWrite,
+  recordingClear,
+  // develop
+  rulesValidate,
+  rulesWrite,
+  rulesActivate,
+  ioLabelSet,
+  fileWrite,
+  fileDelete,
+  // admin
+  configSet,
+  deviceControl,
+  deviceReboot,
 ];
 
 /** Registers the tools visible for the configured profile, sorted by name for a stable tools/list. */

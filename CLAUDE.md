@@ -44,9 +44,8 @@ auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
 
 ## Architektur
 
-Umgesetzt: Konfiguration, Geräte-Client, `STATE_DIR`, alle Lese-Tools (`devices_list`, `device_status`,
-`io_read`, `io_usage`, `io_labels`, `log_read`, `sample`, `docs_get`, `file_list`, `file_read`, `config_get`).
-Noch offen u.a.: Sperrdatei pro Gerät, Audit-Log und Backups, alle schreibenden Tools.
+Umgesetzt: alle 22 Tools (Profile read 11 · operate 13 · develop 19 · admin 22), `STATE_DIR` mit Audit-Log und
+Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Docker, Doku).
 
 - **Transportfreier Kern.** `src/index.ts` (stdio-Adapter: Config laden, `serveStdio`) → `src/server.ts`
   (`createServer(app)`, auch für einen späteren HTTP-Adapter). Die SDK-Factory kann pro Verbindung/Era mehrfach
@@ -67,9 +66,11 @@ Noch offen u.a.: Sperrdatei pro Gerät, Audit-Log und Backups, alle schreibenden
   plattformspezifische Secret-Syntax, kein Klartext-Passwort in der Datei. `WEBSPS_PROFILE` überschreibt das
   `profile` der Datei; Standardprofil ist `read`. Dasselbe Gerät (Host) darf nur einmal konfiguriert sein — die
   IP-Sperre gilt pro anfragender IP, nicht pro Benutzer, und zwei Queues würden die Serialisierung aushebeln.
-- **Geräte-Client** (`src/device/client.ts`): eine Promise-Queue pro Gerät (Gerät ist einfädig). Über mehrere
-  stdio-Prozesse hinweg später: Sperrdatei pro Gerät (best effort). Code `5` BUSY → bis zu 3 Wiederholungen mit
-  Backoff. Body-Limit 8192 Byte wird vor dem Senden geprüft.
+- **Geräte-Client** (`src/device/client.ts`): eine Promise-Queue pro Gerät (Gerät ist einfädig); jeder Job hält
+  zusätzlich `STATE_DIR/<alias>/device.lock` (`src/device/lock.ts`, atomares `mkdir`, übernimmt Sperren toter
+  Prozesse bzw. nach 60 s) gegen parallele stdio-Prozesse. Code `5` BUSY → bis zu 3 Wiederholungen mit Backoff.
+  Body-Limit 8192 Byte wird vor dem Senden geprüft. `upload()` schreibt/validiert über `/files` in Chunks à 6000
+  Byte (nie mitten in einer UTF-8-Sequenz) als **ein** Queue-Job, damit nichts zwischen die Chunks gerät.
 - **Circuit Breaker bei Auth-Fehlern** (`closed` → `open` → `probing` → `blocked`): Code `1` → 60s keine Anfragen,
   danach genau ein Probe-Request mit neu gelesenem Passwort; schlägt der fehl → `blocked`, bis sich das Passwort
   aus der Quelle (`password_file`) ändert. Code 1 nie automatisch wiederholen (5 Fehlversuche → 60s IP-Sperre).
@@ -85,8 +86,18 @@ Noch offen u.a.: Sperrdatei pro Gerät, Audit-Log und Backups, alle schreibenden
   angelegt. Inhalt: `console.jsonl` (Konsolen-Akkumulator, `src/device/consoleLog.ts`: holt bei jedem `log_read`
   die 25 Gerätezeilen und hängt neue per `seq` an; Cursor ist die eigene `pos`, da `seq` beim Reboot neu beginnt),
   `samples/<id>.jsonl` (Aufzeichnungen von `sample`, `src/device/sampler.ts`: Header, Samples, End-Zeile; nach
-  Server-Neustart weiter lesbar). Geplant: JSONL-Audit-Log aller Schreibzugriffe und zeitgestempelte Backups vor
-  jedem Schreiben (das Gerät hält nur eine `.BAK`-Generation). Tests setzen immer ein temporäres `WEBSPS_STATE_DIR`.
+  Server-Neustart weiter lesbar), `audit.jsonl` (jeder Aufruf eines schreibenden Tools inkl. Fehlschlägen, ohne
+  Secrets und ohne Dateiinhalte — `auditedHandler` in `tools/common.ts`), `backups/<zeitstempel>_<pfad>` (alter
+  Inhalt vor jedem Überschreiben/Löschen; das Gerät hält nur eine `.BAK`-Generation), `device.lock`. Tests setzen
+  immer ein temporäres `WEBSPS_STATE_DIR`.
+- **Sicheres Schreiben** (`safeWrite` in `src/device/fileOps.ts`, genutzt von `rules_write`/`file_write`):
+  existiert die Datei, ist `expected_hash` Pflicht und wird vorab geprüft → Backup → Upload mit Hash → danach
+  CRC der Gerätedatei gegen das Gesendete prüfen. `rules_write` validiert vorher immer (Gerät + `lintRules` aus
+  `src/device/rulesLint.ts`, Operatorliste live per `rules.operators`) und normalisiert auf CRLF.
+- **`rules_activate`**: setzt ggf. den Root, `rules.reload`; schlägt das Laden fehl und war es ein **Wechsel** auf
+  eine andere Datei, setzt der Server den vorherigen Root zurück und lädt ihn neu (das Gerät rollt nur auf die
+  `.BAK` derselben Datei zurück — eine neue Datei hat keine). Meldet danach `system.status`; nach einem
+  Fehlschlag bleibt das Gerät in STOP und braucht `device_control RUN` (nur Profil `admin`).
 - **Secrets**: `config_get` maskiert Felder mit `secret:true` im Schema **und** Namen wie `*pass*`/`*token*` immer
   als `***` (`src/device/configSchema.ts`) — unabhängig davon, ob der Gerätebenutzer `config_secrets` hat.
 - **Ergebnisse aufbereitet, Nicht-Zuordenbares unverändert im Feld `extra`.**
@@ -142,6 +153,19 @@ Noch offen u.a.: Sperrdatei pro Gerät, Audit-Log und Backups, alle schreibenden
 - `rules.list` ist ungefiltert: `.BAK`-Dateien und `SYMBOLIK.INI` aus Listen ausblenden, Schreiben/Löschen darauf
   verweigern. 8.3-Dateinamen vor dem Senden prüfen.
 - Bei `system.control` nur die Befehlsnamen verwenden, nie die Ziffern-Aliase.
+- **Upload-Format** `/files`: `<JSON-Header>\n---CONTENT---\n<Rohbytes>`; Header `{path, action?, chunk?, chunks?,
+  expected_hash?}`. `expected_hash` prüft das Gerät **nur beim letzten Chunk** (deshalb bei jedem mitsenden).
+  `action:"validate"` geht auch in Chunks. Rules-Namen: 8.3 mit `.TXT`; schreibbar nur `rules/`, `mails/`, `svg/`,
+  `htm/`. Die Antwort meldet `"backup":"X.BAK"` auch dann, wenn es keine vorherige Datei gab.
+- `rules.reload` bei Fehler: Code 6 mit Text; mit vorhandener `.BAK` Rollback und Zustand **STOP**, ohne `.BAK`
+  Zustand **RULES (−1)** ohne Rollback. Nach einem Fehler bleibt das Gerät auch nach erfolgreichem Reload in STOP.
+  `rules.set_root` meldet „erst mit REINIT/Reboot aktiv“, `rules.reload` aktiviert den neuen Root aber sofort.
+  `rules.delete` der aktiven Root-Datei → Code 2 (der Server prüft das vorher selbst).
+- `io.write`: Batch `{"writes":[{channel,value}]}` mit Ergebnis pro Eintrag; Analogwerte werden **ungeprüft**
+  umgewandelt (`"abc"` → 0, Erfolg!) — Werte prüft `writeValue` in `tools/ioWrite.ts`. `SW`-Bereich 0–100 prüft
+  das Gerät. Labels bis 100 Byte verifiziert.
+- `files.delete` erwartet `{directory, filename}` (nicht `path`) und scheitert wie `files.list` an der
+  Verzeichnisprüfung — Löschen außerhalb `rules/` geht über die API derzeit nicht.
 
 ## Server-Invarianten (im Code erzwingen, nicht im Prompt)
 

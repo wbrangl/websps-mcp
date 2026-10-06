@@ -14,6 +14,16 @@ const TOPICS = {
 
 type Topic = keyof typeof TOPICS;
 
+/** Static device document, fetched once per process. */
+export async function getDoc(device: Device, topic: Topic): Promise<unknown> {
+  let content = device.docs.get(topic);
+  if (content === undefined) {
+    content = await TOPICS[topic](device);
+    device.docs.set(topic, content);
+  }
+  return content;
+}
+
 export const docsGet: ToolDefinition = {
   name: "docs_get",
   profile: "read",
@@ -37,12 +47,7 @@ export const docsGet: ToolDefinition = {
       },
       handler(async ({ device: alias, topic }) => {
         const device = app.devices.resolve(alias);
-        let content = device.docs.get(topic);
-        if (content === undefined) {
-          content = await TOPICS[topic](device);
-          device.docs.set(topic, content);
-        }
-        return { device: device.alias, topic, content };
+        return { device: device.alias, topic, content: await getDoc(device, topic) };
       }),
     );
   },

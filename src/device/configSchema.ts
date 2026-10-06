@@ -20,6 +20,11 @@ const MAX_PAGES = 20;
 /** Safety net for secrets the schema does not flag (or when the schema is unavailable). */
 const SECRET_NAME = /pass|secret|token|key$/i;
 
+/** Name-based check only, usable where the schema is not at hand (e.g. redacting audit entries). */
+export function looksSecret(name: string): boolean {
+  return SECRET_NAME.test(name);
+}
+
 /** All fields of `config.schema` (the device pages them), cached per device. */
 export class ConfigSchemaCache {
   private fields: ConfigField[] | undefined;
