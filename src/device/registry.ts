@@ -1,8 +1,12 @@
+import { join } from "node:path";
 import type { DeviceConfig } from "../config.js";
 import { ServerErrorCode, WebspsError } from "../errors.js";
 import { DeviceClient, type DeviceClientOptions } from "./client.js";
+import { ConfigSchemaCache } from "./configSchema.js";
+import { ConsoleLog } from "./consoleLog.js";
 import { LabelCache } from "./labels.js";
 import { LayoutCache } from "./readAll.js";
+import { Sampler } from "./sampler.js";
 
 export interface Device {
   alias: string;
@@ -10,6 +14,11 @@ export interface Device {
   client: DeviceClient;
   labels: LabelCache;
   layout: LayoutCache;
+  configSchema: ConfigSchemaCache;
+  consoleLog: ConsoleLog;
+  sampler: Sampler;
+  /** Static device documents (help pages, operator list), cached for the process lifetime. */
+  docs: Map<string, unknown>;
 }
 
 /**
@@ -19,16 +28,26 @@ export interface Device {
 export class DeviceRegistry {
   private readonly devices: Device[];
 
-  constructor(configs: readonly DeviceConfig[], overrides: Partial<DeviceClientOptions> = {}) {
+  constructor(
+    configs: readonly DeviceConfig[],
+    stateDir: string,
+    overrides: Partial<DeviceClientOptions> = {},
+  ) {
     this.devices = configs.map((config) => {
       const client = new DeviceClient({ ...config, ...overrides });
-      return {
+      const dir = join(stateDir, config.alias);
+      const device = {
         alias: config.alias,
         url: client.url,
         client,
         labels: new LabelCache(client),
         layout: new LayoutCache(client),
-      };
+        configSchema: new ConfigSchemaCache(client),
+        consoleLog: new ConsoleLog(client, join(dir, "console.jsonl")),
+        docs: new Map<string, unknown>(),
+      } as Device;
+      device.sampler = new Sampler(device, join(dir, "samples"));
+      return device;
     });
   }
 

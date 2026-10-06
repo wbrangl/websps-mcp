@@ -53,8 +53,28 @@ describe("loadConfig", () => {
     expect(config.devices[1]?.timeoutMs).toBe(2000);
     expect(config.devices[1]?.methodTimeoutsMs).toEqual({
       "rules.reload": 10_000,
+      "logs.search": 30_000,
       "io.read_all": 3000,
     });
+  });
+
+  it("resolves the state directory", () => {
+    const env = { WEBSPS_URL: "http://x", WEBSPS_USER: "u", WEBSPS_PASSWORD: "p" };
+    expect(loadConfig({ argv: [], env: { ...env, HOME: "/home/u" } }).stateDir).toBe(
+      "/home/u/.local/state/websps-mcp",
+    );
+    expect(loadConfig({ argv: [], env: { ...env, XDG_STATE_HOME: "/xdg" } }).stateDir).toBe(
+      "/xdg/websps-mcp",
+    );
+    expect(loadConfig({ argv: [], env: { ...env, WEBSPS_STATE_DIR: "/s" } }).stateDir).toBe("/s");
+
+    const file = JSON.stringify({ ...JSON.parse(twoDevices), state_dir: "state" });
+    const fromFile = loadConfig({
+      argv: ["--config", "/etc/websps/c.json"],
+      env: { PW_A: "x" },
+      readFile: files({ "/etc/websps/c.json": file, "/etc/websps/b.pw": "y" }),
+    });
+    expect(fromFile.stateDir).toBe("/etc/websps/state");
   });
 
   it("lets WEBSPS_PROFILE override the file profile", () => {

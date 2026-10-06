@@ -13,9 +13,12 @@ try {
   process.exit(1);
 }
 
-const app = { profile: config.profile, devices: new DeviceRegistry(config.devices) };
+const app = {
+  profile: config.profile,
+  devices: new DeviceRegistry(config.devices, config.stateDir),
+};
 console.error(
-  `websps-mcp: profile ${app.profile}, devices: ${config.devices.map((d) => `${d.alias} (${d.url})`).join(", ")}`,
+  `websps-mcp: profile ${app.profile}, state ${config.stateDir}, devices: ${config.devices.map((d) => `${d.alias} (${d.url})`).join(", ")}`,
 );
 
 // Serves both the 2026-07-28 revision and 2025-era clients (legacy: 'serve' is the default).

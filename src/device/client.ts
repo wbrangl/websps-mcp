@@ -4,6 +4,7 @@ import { DeviceErrorCode, ServerErrorCode, WebspsError } from "../errors.js";
 /** The device locks an IP out for 60s after 5 failed logins. */
 export const AUTH_LOCKOUT_MS = 60_000;
 const BUSY_RETRY_DELAYS_MS = [250, 500, 1000];
+const decoder = new TextDecoder();
 /** Device request body limit (`post_size` in `api.describe`). */
 export const MAX_POST_BYTES = 8192;
 
@@ -70,16 +71,49 @@ export class DeviceClient {
       );
     }
     const timeoutMs = this.options.methodTimeoutsMs[method] ?? this.options.timeoutMs;
+    return this.send("/api", body, timeoutMs, (bytes) =>
+      this.parse(decoder.decode(bytes)),
+    ) as Promise<T>;
+  }
 
+  /** `/files` with `action:"hash"`: CRC-16/XMODEM and size, without the content. */
+  fileHash(path: string): Promise<{ crc16: number; bytes: number }> {
+    const body = JSON.stringify({ path, action: "hash" });
+    return this.send("/files", body, this.filesTimeoutMs(), (bytes) =>
+      this.parse(decoder.decode(bytes)),
+    ) as Promise<{ crc16: number; bytes: number }>;
+  }
+
+  /** Raw file content from `/files`. Errors arrive as a JSON body instead of the content. */
+  readFile(path: string): Promise<Uint8Array> {
+    const body = JSON.stringify({ path });
+    return this.send("/files", body, this.filesTimeoutMs(), (bytes) => {
+      const head = decoder.decode(bytes.subarray(0, 16)).trimStart();
+      return head.startsWith('{"ok":false')
+        ? this.parse(decoder.decode(bytes))
+        : { ok: true, result: bytes };
+    }) as Promise<Uint8Array>;
+  }
+
+  private filesTimeoutMs(): number {
+    return this.options.methodTimeoutsMs.files ?? this.options.timeoutMs;
+  }
+
+  private send(
+    endpoint: string,
+    body: string,
+    timeoutMs: number,
+    interpret: (bytes: Uint8Array) => ApiResponse,
+  ): Promise<unknown> {
     return this.enqueue(async () => {
       for (let attempt = 0; ; attempt++) {
         this.checkCircuit();
-        const text = await this.request("/api", { method: "POST", body }, timeoutMs);
+        const bytes = await this.request(endpoint, { method: "POST", body }, timeoutMs);
         // The HTTP status is always 200 on the device; only the body tells success or failure.
-        const response = this.parse(text);
+        const response = interpret(bytes);
         if (response.ok) {
           this.onAuthAccepted();
-          return response.result as T;
+          return response.result;
         }
         const { code, message } = response.error;
         if (code === DeviceErrorCode.AUTH) {
@@ -101,7 +135,9 @@ export class DeviceClient {
   getText(path: string): Promise<string> {
     return this.enqueue(async () => {
       this.checkCircuit();
-      return this.request(path, { method: "GET" }, this.options.timeoutMs, true);
+      return decoder.decode(
+        await this.request(path, { method: "GET" }, this.options.timeoutMs, true),
+      );
     });
   }
 
@@ -161,7 +197,7 @@ export class DeviceClient {
     init: { method: string; body?: string },
     timeoutMs: number,
     checkStatus = false,
-  ): Promise<string> {
+  ): Promise<Uint8Array> {
     const auth = Buffer.from(`${this.options.user}:${this.password}`).toString("base64");
     try {
       const response = await this.fetchImpl(`${this.url}${path}`, {
@@ -172,14 +208,14 @@ export class DeviceClient {
         },
         signal: AbortSignal.timeout(timeoutMs),
       });
-      const text = await response.text();
+      const bytes = new Uint8Array(await response.arrayBuffer());
       if (checkStatus && !response.ok) {
         throw this.error(
           ServerErrorCode.BAD_RESPONSE,
           `GET ${path} returned HTTP ${response.status}`,
         );
       }
-      return text;
+      return bytes;
     } catch (error) {
       if (error instanceof WebspsError) throw error;
       const name = (error as Error).name;

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { crc16Xmodem } from "../device/crc16.js";
 
 /** Minimal stand-in for the device's "Variablen ID" help table (same structure, own content). */
 export const VARIABLE_TABLE_HTML = `<html><body>
@@ -27,7 +28,24 @@ export interface FakeDeviceState {
   /** Number of BUSY answers to give before answering normally. */
   busy: number;
   calls: string[];
+  /** Files of the `/files` endpoint by path, e.g. `rules/TEST.TXT`. */
+  files: Record<string, string>;
+  /** Console ring buffer, oldest first; the device returns the newest 25. */
+  log: { seq: number; timestamp: string; message: string }[];
+  used: Record<string, number[]>;
+  config: Record<string, unknown>;
 }
+
+const CONFIG_FIELDS = [
+  { name: "device_name", type: "string", secret: false, critical: false, restart_required: false },
+  { name: "admin_password", type: "string", secret: true, critical: true, restart_required: false },
+  { name: "time_source", type: "bool", secret: false, critical: false, restart_required: false },
+];
+const SCHEMA_PAGE_SIZE = 2;
+
+export const RULES_HELP_HTML =
+  "<html><head><style>p{}</style></head><body><h4>Merker</h4><p>M0.0&nbsp;=&nbsp;E0.0 &amp;&amp; M0.1</p>" +
+  "<table><tr><td>SET</td><td>setzen</td></tr></table></body></html>";
 
 export function defaultState(): FakeDeviceState {
   return {
@@ -46,6 +64,19 @@ export function defaultState(): FakeDeviceState {
     labels: { "S0.0": "Pump on" },
     busy: 0,
     calls: [],
+    files: {
+      "rules/TEST.TXT": "A0.0 = E0.0 && M0.0;\r\nM0.0 = S0.0;\r\n",
+      "rules/TEST.BAK": "A0.0 = E0.0;\r\n",
+      "rules/SYMBOLIK.INI": "[SYMBOLIK]\r\nS0.0=Pump on\r\n",
+      "mails/HELLO.TXT": "Grüße",
+    },
+    log: Array.from({ length: 30 }, (_, i) => ({
+      seq: i + 1,
+      timestamp: "10:00:00",
+      message: i % 2 === 0 ? `Rules loaded ${i + 1}` : `API Basic-Auth OK ${i + 1}`,
+    })),
+    used: { S: [1, 0, 0, 0, 0, 0, 0, 0], M: [2, 1, 0, 0, 0, 0, 0, 0] },
+    config: { device_name: "Test", admin_password: "pw", time_source: false },
   };
 }
 
@@ -66,11 +97,15 @@ export async function startFakeDevice(
   const server: Server = createServer(async (req, res) => {
     const body = await readBody(req);
     if (req.method === "GET") {
-      if (req.url === "/system/html/dat_vis.htm") {
-        res.writeHead(200, { "content-type": "text/html" }).end(VARIABLE_TABLE_HTML);
-      } else {
-        res.writeHead(404).end("not found");
-      }
+      const page = PAGES[req.url ?? ""];
+      if (page !== undefined) res.writeHead(200, { "content-type": "text/html" }).end(page);
+      else res.writeHead(404).end("not found");
+      return;
+    }
+    if (req.url === "/files") {
+      const reply = files(state, req, body);
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end(typeof reply === "string" ? reply : JSON.stringify(reply));
       return;
     }
     res
@@ -86,14 +121,42 @@ export async function startFakeDevice(
   };
 }
 
-function answer(state: FakeDeviceState, req: IncomingMessage, body: string): Answer {
+const PAGES: Record<string, string> = {
+  "/system/html/dat_vis.htm": VARIABLE_TABLE_HTML,
+  "/system/html/dat_rul.htm": RULES_HELP_HTML,
+};
+
+function authorized(state: FakeDeviceState, req: IncomingMessage): boolean {
   const expected = `Basic ${Buffer.from(`${state.user}:${state.password}`).toString("base64")}`;
+  return req.headers.authorization === expected;
+}
+
+/** `/files`: raw content on success, a JSON error body otherwise. */
+function files(state: FakeDeviceState, req: IncomingMessage, body: string): string | Answer {
+  const { path, action } = JSON.parse(body) as { path: string; action?: string };
+  state.calls.push(`/files ${action ?? "read"} ${path}`);
+  if (!authorized(state, req))
+    return { ok: false, error: { code: 1, message: "Nicht angemeldet" } };
+  if (path === "log/LOGFILE.TXT") {
+    return { ok: false, error: { code: 6, message: "Datei zu gross (max 32767 Bytes)" } };
+  }
+  const content = state.files[path];
+  if (content === undefined)
+    return { ok: false, error: { code: 4, message: "Datei nicht gefunden" } };
+  if (action === "hash") {
+    const bytes = Buffer.from(content);
+    return { ok: true, result: { crc16: crc16Xmodem(bytes), bytes: bytes.length } };
+  }
+  return content;
+}
+
+function answer(state: FakeDeviceState, req: IncomingMessage, body: string): Answer {
   const { method, params } = JSON.parse(body) as {
     method: string;
     params?: Record<string, unknown>;
   };
   state.calls.push(method);
-  if (method !== "api.describe" && req.headers.authorization !== expected) {
+  if (method !== "api.describe" && !authorized(state, req)) {
     return { ok: false, error: { code: 1, message: "Ungueltige Zugangsdaten" } };
   }
   if (state.busy > 0) {
@@ -109,6 +172,59 @@ function answer(state: FakeDeviceState, req: IncomingMessage, body: string): Ans
       return { ok: true, result: { firmware_version: "TEST", rules_initialized: "TEST.TXT" } };
     case "system.mbox":
       return { ok: false, error: { code: 2, message: "keine Berechtigung" } };
+    case "io.read_used":
+      return { ok: true, result: state.used };
+    case "system.log":
+      return {
+        ok: true,
+        result: { entries: state.log.slice(-25).reverse(), limit: 25 },
+      };
+    case "logs.search": {
+      const pattern = String(params?.pattern ?? "");
+      const matches = state.log.filter((e) => e.message.includes(pattern)).map((e) => e.message);
+      return {
+        ok: true,
+        result: { pattern, total_matches: matches.length, matches: matches.slice(-2), returned: 2 },
+      };
+    }
+    case "rules.operators":
+      return { ok: true, result: { operators: [{ code: 1, token: "&&", params: [] }], count: 1 } };
+    case "rules.list":
+      return {
+        ok: true,
+        result: {
+          root: "TEST.TXT",
+          files: Object.entries(state.files)
+            .filter(([path]) => path.startsWith("rules/"))
+            .map(([path, content]) => ({
+              name: path.slice("rules/".length),
+              size: Buffer.byteLength(content),
+              is_root: path === "rules/TEST.TXT",
+            })),
+        },
+      };
+    case "files.list":
+      return {
+        ok: false,
+        error: { code: 3, message: `Ungültiges Verzeichnis: ${params?.directory}` },
+      };
+    case "config.schema": {
+      const page = Number(params?.page ?? 0);
+      const fields = CONFIG_FIELDS.slice(page * SCHEMA_PAGE_SIZE, (page + 1) * SCHEMA_PAGE_SIZE);
+      return {
+        ok: true,
+        result: { page, page_size: SCHEMA_PAGE_SIZE, total: CONFIG_FIELDS.length, fields },
+      };
+    }
+    case "config.get_multi": {
+      const keys = (params?.keys as string[] | undefined) ?? [];
+      return {
+        ok: true,
+        result: Object.fromEntries(
+          keys.filter((k) => k in state.config).map((k) => [k, state.config[k]]),
+        ),
+      };
+    }
     case "io.labels":
       return { ok: true, result: { labels: state.labels } };
     case "io.read_all":

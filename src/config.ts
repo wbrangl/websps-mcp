@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
 import { PROFILES, type Profile } from "./profiles.js";
 
@@ -7,6 +8,8 @@ export const DEFAULT_TIMEOUT_MS = 5000;
 /** Reload-type methods block on the device for up to ~4s, plus queue latency. */
 export const DEFAULT_METHOD_TIMEOUTS_MS: Readonly<Record<string, number>> = {
   "rules.reload": 10_000,
+  // Scans the whole log file on the device; takes ~10s.
+  "logs.search": 30_000,
 };
 const DEFAULT_ENV_ALIAS = "websps";
 
@@ -29,6 +32,8 @@ export interface DeviceConfig {
 export interface ServerConfig {
   profile: Profile;
   devices: DeviceConfig[];
+  /** Persistent server state (log accumulator, recordings, audit log, backups). Created lazily. */
+  stateDir: string;
 }
 
 export class ConfigError extends Error {}
@@ -41,6 +46,7 @@ const timeoutSchema = z.number().int().positive();
 
 const fileSchema = z.strictObject({
   profile: z.enum(PROFILES).optional(),
+  state_dir: z.string().min(1).optional(),
   devices: z
     .array(
       z.strictObject({
@@ -91,7 +97,11 @@ export function loadConfig(options: LoadConfigOptions = {}): ServerConfig {
     return loadFile(configPath, envProfile, env, readFile);
   }
   if (env.WEBSPS_URL !== undefined) {
-    return { profile: envProfile ?? "read", devices: [deviceFromEnv(env, readFile)] };
+    return {
+      profile: envProfile ?? "read",
+      devices: [deviceFromEnv(env, readFile)],
+      stateDir: stateDirFrom(env, undefined),
+    };
   }
   throw new ConfigError(
     "No device configured: pass --config <file>, set WEBSPS_CONFIG, or set WEBSPS_URL/WEBSPS_USER/WEBSPS_PASSWORD",
@@ -164,7 +174,24 @@ function loadFile(
       timeoutMs: d.timeout_ms ?? DEFAULT_TIMEOUT_MS,
       methodTimeoutsMs: { ...DEFAULT_METHOD_TIMEOUTS_MS, ...d.timeouts_ms },
     })),
+    stateDir: stateDirFrom(
+      env,
+      parsed.data.state_dir === undefined ? undefined : resolve(baseDir, parsed.data.state_dir),
+    ),
   };
+}
+
+/** `WEBSPS_STATE_DIR` > `state_dir` from the file > the platform's per-user state directory. */
+function stateDirFrom(env: Env, fromFile: string | undefined): string {
+  if (env.WEBSPS_STATE_DIR !== undefined && env.WEBSPS_STATE_DIR !== "") {
+    return resolve(env.WEBSPS_STATE_DIR);
+  }
+  if (fromFile !== undefined) return fromFile;
+  if (process.platform === "win32" && env.LOCALAPPDATA !== undefined) {
+    return join(env.LOCALAPPDATA, "websps-mcp", "state");
+  }
+  const base = env.XDG_STATE_HOME ?? join(env.HOME ?? homedir(), ".local", "state");
+  return join(base, "websps-mcp");
 }
 
 function deviceFromEnv(env: Env, readFile: (path: string) => string): DeviceConfig {

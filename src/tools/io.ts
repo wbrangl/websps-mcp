@@ -1,20 +1,16 @@
 import { z } from "zod";
-import { type OperandGroup, type UnpackedReadAll, unpackReadAll } from "../device/readAll.js";
+import {
+  fetchReadAll,
+  MAX_BATCH,
+  normalizeChannels,
+  readChannelValues,
+} from "../device/channels.js";
+import { channelName, type OperandGroup } from "../device/readAll.js";
 import type { Device } from "../device/registry.js";
 import { deviceParam, handler, invalidInput, READ_ONLY, type ToolDefinition } from "./common.js";
 
-/** Device batch limit for `io.read`/`io.write`, not reported by `api.describe`. */
-export const MAX_BATCH = 32;
-/** Channel names are limited to 15 bytes on the device. */
-export const MAX_CHANNEL_BYTES = 15;
 /** Value groups up to this size are listed completely, larger ones only with non-zero values. */
 const FULL_VALUE_GROUP_MAX = 16;
-
-interface IoReadEntry {
-  channel: string;
-  value?: number;
-  error?: string;
-}
 
 export const ioRead: ToolDefinition = {
   name: "io_read",
@@ -52,54 +48,16 @@ export const ioRead: ToolDefinition = {
 };
 
 async function readChannels(device: Device, requested: string[]): Promise<Record<string, unknown>> {
-  const channels = [...new Set(requested.map((c) => c.trim()))];
-  const tooLong = channels.find((c) => Buffer.byteLength(c) > MAX_CHANNEL_BYTES);
-  if (tooLong !== undefined) {
-    throw invalidInput(`Channel name "${tooLong}" exceeds ${MAX_CHANNEL_BYTES} bytes`);
-  }
-
-  // Always use the batch form: the single-channel form reports unknown channels misleadingly.
-  const result = await device.client.call<{ channels?: IoReadEntry[]; timestamp?: string }>(
-    "io.read",
-    { channels },
-  );
-  const entries = result.channels ?? [];
-
-  // io.read does not serve value operands such as counters, timers and analog channels;
-  // take those from io.read_all instead.
-  if (entries.some((e) => e.error !== undefined)) {
-    const values = new Map<string, number>();
-    for (const group of (await fetchReadAll(device)).groups) {
-      group.channels.forEach((channel, i) => {
-        values.set(channel, group.values[i] as number);
-      });
-    }
-    for (const entry of entries) {
-      const value = entry.error !== undefined ? values.get(entry.channel) : undefined;
-      if (value !== undefined) {
-        entry.value = value;
-        delete entry.error;
-      }
-    }
-  }
-
+  const { timestamp, entries } = await readChannelValues(device, normalizeChannels(requested));
   const labels = await device.labels.get().catch(() => ({}) as Record<string, string>);
   return {
     device: device.alias,
-    timestamp: result.timestamp,
+    timestamp,
     channels: entries.map((entry) => {
       const label = labels[entry.channel];
       return label === undefined ? entry : { ...entry, label };
     }),
   };
-}
-
-async function fetchReadAll(device: Device): Promise<UnpackedReadAll> {
-  const [result, layouts] = await Promise.all([
-    device.client.call<Record<string, unknown>>("io.read_all"),
-    device.layout.get(),
-  ]);
-  return unpackReadAll(result, layouts);
 }
 
 async function readAll(
@@ -143,6 +101,53 @@ function summarize(group: OperandGroup): Record<string, unknown> {
   });
   return full ? { ...meta, values } : { ...meta, values, zero_omitted: true };
 }
+
+export const ioUsage: ToolDefinition = {
+  name: "io_usage",
+  profile: "read",
+  register(server, app) {
+    server.registerTool(
+      "io_usage",
+      {
+        title: "Channel usage in rules",
+        description: [
+          "Shows which channel addresses the active rules reference and how often, e.g. to find a free marker before writing new rules.",
+          'Without `type` returns the used channels of every operand type; with `type` (e.g. "M") also lists the free ones.',
+        ].join(" "),
+        inputSchema: z.object({ device: deviceParam(app), type: z.string().min(1).optional() }),
+        annotations: READ_ONLY,
+      },
+      handler(async ({ device: alias, type }) => {
+        const device = app.devices.resolve(alias);
+        const result = await device.client.call<Record<string, unknown>>("io.read_used");
+        const wanted = type?.toUpperCase();
+        if (wanted !== undefined && !Array.isArray(result[wanted])) {
+          const known = Object.keys(result).filter((k) => Array.isArray(result[k]));
+          throw invalidInput(`Unknown operand type "${type}"; known: ${known.join(", ")}`);
+        }
+
+        const types: Record<string, unknown> = {};
+        for (const [key, counts] of Object.entries(result)) {
+          if (!Array.isArray(counts) || (wanted !== undefined && key !== wanted)) continue;
+          const used: Record<string, number> = {};
+          const free: string[] = [];
+          counts.forEach((count: unknown, i) => {
+            const channel = channelName(key, "bit", i);
+            if (typeof count === "number" && count > 0) used[channel] = count;
+            else free.push(channel);
+          });
+          types[key] = {
+            total: counts.length,
+            used_count: Object.keys(used).length,
+            used,
+            ...(wanted !== undefined && { free }),
+          };
+        }
+        return { device: device.alias, types };
+      }),
+    );
+  },
+};
 
 export const ioLabels: ToolDefinition = {
   name: "io_labels",

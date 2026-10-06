@@ -44,8 +44,9 @@ auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
 
 ## Architektur
 
-Umgesetzt: Konfiguration, Geräte-Client, Tools `devices_list`, `device_status`, `io_read`, `io_labels`.
-Noch offen u.a.: Sperrdatei pro Gerät, `STATE_DIR`, alle schreibenden Tools.
+Umgesetzt: Konfiguration, Geräte-Client, `STATE_DIR`, alle Lese-Tools (`devices_list`, `device_status`,
+`io_read`, `io_usage`, `io_labels`, `log_read`, `sample`, `docs_get`, `file_list`, `file_read`, `config_get`).
+Noch offen u.a.: Sperrdatei pro Gerät, Audit-Log und Backups, alle schreibenden Tools.
 
 - **Transportfreier Kern.** `src/index.ts` (stdio-Adapter: Config laden, `serveStdio`) → `src/server.ts`
   (`createServer(app)`, auch für einen späteren HTTP-Adapter). Die SDK-Factory kann pro Verbindung/Era mehrfach
@@ -79,8 +80,15 @@ Noch offen u.a.: Sperrdatei pro Gerät, `STATE_DIR`, alle schreibenden Tools.
   `tools/list` zeigt nur die Tools des konfigurierten Profils.
   Riskante Tools (`config_set`, `device_control`, `device_reboot`) nur im Profil `admin`. Am Gerät zusätzlich je
   Profil ein eigener Benutzer mit passender `PERM_*`-Bitmaske.
-- **`STATE_DIR`** enthält Log-Akkumulator, Sampling-Aufzeichnungen, JSONL-Audit-Log aller Schreibzugriffe und
-  zeitgestempelte Backups vor jedem Schreiben (das Gerät hält nur eine `.BAK`-Generation).
+- **`STATE_DIR`** (`WEBSPS_STATE_DIR` > `state_dir` in der JSON > `$XDG_STATE_HOME`/`~/.local/state/websps-mcp`
+  bzw. `%LOCALAPPDATA%\websps-mcp\state`), pro Gerät ein Unterordner `<alias>/`, wird erst beim ersten Schreiben
+  angelegt. Inhalt: `console.jsonl` (Konsolen-Akkumulator, `src/device/consoleLog.ts`: holt bei jedem `log_read`
+  die 25 Gerätezeilen und hängt neue per `seq` an; Cursor ist die eigene `pos`, da `seq` beim Reboot neu beginnt),
+  `samples/<id>.jsonl` (Aufzeichnungen von `sample`, `src/device/sampler.ts`: Header, Samples, End-Zeile; nach
+  Server-Neustart weiter lesbar). Geplant: JSONL-Audit-Log aller Schreibzugriffe und zeitgestempelte Backups vor
+  jedem Schreiben (das Gerät hält nur eine `.BAK`-Generation). Tests setzen immer ein temporäres `WEBSPS_STATE_DIR`.
+- **Secrets**: `config_get` maskiert Felder mit `secret:true` im Schema **und** Namen wie `*pass*`/`*token*` immer
+  als `***` (`src/device/configSchema.ts`) — unabhängig davon, ob der Gerätebenutzer `config_secrets` hat.
 - **Ergebnisse aufbereitet, Nicht-Zuordenbares unverändert im Feld `extra`.**
   - Label-Anreicherung (`{channel, value, label}`) aus einem `io.labels`-Cache pro Gerät (TTL ~60s, sofort
     invalidiert nach eigenem `io_label_set`) — nicht bei jedem `io_read` live nachfragen.
@@ -111,10 +119,20 @@ Noch offen u.a.: Sperrdatei pro Gerät, `STATE_DIR`, alle schreibenden Tools.
   Text prüfen. Immer die Batch-Form `{"channels":[…]}` senden: die Einzelform `{"channel":…}` meldet bei
   unbekannten Kanälen irreführend „Parameter 'channel' nicht vorhanden“.
 - `api.describe` braucht keine Berechtigung (gut für Erreichbarkeitsprüfung); Hilfeseiten liegen unter
-  `/system/html/` (per GET, HTTP-Status dort normal).
+  `/system/html/` (per GET, HTTP-Status dort normal; `dat_rul.htm` ≈ 74 KB HTML).
+- **Jeder API-Request** erzeugt eine Konsolenzeile „API Basic-Auth OK …“ — eigene Zugriffe (z.B. `sample`) füllen
+  den 25-Zeilen-Ringpuffer.
+- `logs.search` durchsucht die ganze Logdatei, dauert **~10 s** (Gerät blockiert, Timeout 30 s), ist
+  **case-sensitiv** und kürzt Treffer auf ~60 Zeichen. `system.log` liefert neueste Einträge zuerst.
+- `files.list` lehnt auf der aktuellen Firmware **jedes** Verzeichnis ab („Ungültiges Verzeichnis“) — für `rules`
+  deshalb `rules.list` (liefert auch die Root-Datei). `config.get_section` liefert für jede Sektion `{}`, das Schema
+  hat kein Sektionsfeld → nicht verwenden. `config.schema` ist paginiert (`page`, 30 je Seite).
+  `config.get_multi` lässt unbekannte Schlüssel stillschweigend weg; `config.get` liefert mit `config_secrets`
+  Passwörter im Klartext.
 - `/files` ist **immer POST**, auch beim Lesen; Schreiben über das Wire-Format mit `---CONTENT---`-Trenner, ab
-  ~6KB in Chunks (`BODY_SIZE=8192`), max. 32767 Byte pro Datei, kein Offset/Range-Lesen (vorher `bytes` per
-  `action:"hash"` prüfen und klar scheitern statt still abzuschneiden).
+  ~6KB in Chunks (`BODY_SIZE=8192`), max. 32767 Byte pro Datei, kein Offset/Range-Lesen. Fehler kommen beim Lesen
+  als JSON-Body statt Inhalt; `file_read` hasht deshalb zuerst und prüft den Inhalt per CRC (unterscheidet Inhalt
+  von Fehler, erkennt Änderung zwischendurch). Über 32767 Byte scheitert schon `action:"hash"` (Code 6).
 - Prüfsumme ist **CRC-16/XMODEM** (Polynom `0x1021`, Startwert `0`, keine Spiegelung, kein End-XOR) — lässt sich
   für `expected_hash` lokal berechnen.
 - Harte Grenzen, die `api.describe` nicht meldet (fest im Server hinterlegen): 32 Einträge bei
