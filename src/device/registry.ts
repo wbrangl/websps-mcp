@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { DeviceConfig } from "../config.js";
+import { DEFAULT_RETENTION, type DeviceConfig, type Retention } from "../config.js";
 import { ServerErrorCode, WebspsError } from "../errors.js";
 import { AuditLog, BackupStore } from "./audit.js";
 import { DeviceClient, type DeviceClientOptions } from "./client.js";
@@ -36,6 +36,7 @@ export class DeviceRegistry {
     configs: readonly DeviceConfig[],
     stateDir: string,
     overrides: Partial<DeviceClientOptions> = {},
+    retention: Retention = DEFAULT_RETENTION,
   ) {
     this.devices = configs.map((config) => {
       const dir = join(stateDir, config.alias);
@@ -53,10 +54,16 @@ export class DeviceRegistry {
         configSchema: new ConfigSchemaCache(client),
         consoleLog: new ConsoleLog(client, join(dir, "console.jsonl")),
         docs: new Map<string, unknown>(),
-        audit: new AuditLog(join(dir, "audit.jsonl")),
-        backups: new BackupStore(join(dir, "backups")),
+        audit: new AuditLog(join(dir, "audit.jsonl"), {
+          maxBytes: retention.auditMaxBytes,
+          files: retention.auditFiles,
+        }),
+        backups: new BackupStore(join(dir, "backups"), retention.backupsPerFile),
       } as Device;
-      device.sampler = new Sampler(device, join(dir, "samples"));
+      device.sampler = new Sampler(device, join(dir, "samples"), undefined, {
+        maxAgeDays: retention.recordingsMaxAgeDays,
+        maxCount: retention.recordingsMaxCount,
+      });
       return device;
     });
   }

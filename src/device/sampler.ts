@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { DeviceErrorCode, ServerErrorCode, WebspsError } from "../errors.js";
 import { appendJsonl, readJsonl } from "../state.js";
@@ -75,6 +76,7 @@ export class Sampler {
     private readonly device: Device,
     private readonly dir: string,
     private readonly now: () => Date = () => new Date(),
+    private readonly retention = { maxAgeDays: 30, maxCount: 100 },
   ) {}
 
   start(channels: string[], intervalMs: number, durationS: number): RecordingView {
@@ -109,8 +111,13 @@ export class Sampler {
       busy: false,
     };
     this.recordings.set(header.id, recording);
-    void appendJsonl(this.file(header.id), [header]).catch((error: unknown) =>
-      this.fail(recording, error),
+    void appendJsonl(this.file(header.id), [header]).then(
+      // Clean up once the new file exists, so it counts towards the limit.
+      () =>
+        this.prune().catch((error: unknown) =>
+          console.error(`[${this.device.alias}] cleaning up recordings: ${error}`),
+        ),
+      (error: unknown) => this.fail(recording, error),
     );
 
     const timer = setInterval(() => void this.tick(recording), intervalMs);
@@ -237,6 +244,34 @@ export class Sampler {
     if (footer?.error !== undefined) recording.error = footer.error;
     else if (footer === undefined) recording.error = "server process ended during the recording";
     return recording;
+  }
+
+  /**
+   * Removes recordings older than the retention age and all but the newest ones beyond the count.
+   * Running recordings (of this process) are never touched; a recording running in another process
+   * keeps its file fresh, so it is the newest and never old.
+   */
+  private async prune(): Promise<void> {
+    const running = new Set(
+      [...this.recordings.values()].filter((r) => r.status === "running").map((r) => r.header.id),
+    );
+    let names: string[];
+    try {
+      names = (await readdir(this.dir)).filter((n) => n.endsWith(".jsonl"));
+    } catch {
+      return;
+    }
+    const files = await Promise.all(
+      names.map(async (name) => ({ name, mtime: (await stat(join(this.dir, name))).mtimeMs })),
+    );
+    files.sort((a, b) => b.mtime - a.mtime);
+    const oldest = this.now().getTime() - this.retention.maxAgeDays * 24 * 3600 * 1000;
+    for (const [index, file] of files.entries()) {
+      if (running.has(file.name.slice(0, -".jsonl".length))) continue;
+      if (index >= this.retention.maxCount || file.mtime < oldest) {
+        await rm(join(this.dir, file.name), { force: true });
+      }
+    }
   }
 
   private file(id: string): string {

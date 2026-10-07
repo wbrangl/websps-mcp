@@ -146,3 +146,51 @@ describe("loadConfig", () => {
     );
   });
 });
+
+describe("retention", () => {
+  const env = { WEBSPS_URL: "http://x", WEBSPS_USER: "u", WEBSPS_PASSWORD: "p" };
+
+  it("has defaults and takes environment overrides", () => {
+    expect(loadConfig({ argv: [], env }).retention).toEqual({
+      backupsPerFile: 20,
+      auditMaxBytes: 10 * 1024 * 1024,
+      auditFiles: 5,
+      recordingsMaxAgeDays: 30,
+      recordingsMaxCount: 100,
+    });
+    const custom = loadConfig({
+      argv: [],
+      env: {
+        ...env,
+        WEBSPS_KEEP_BACKUPS: "5",
+        WEBSPS_AUDIT_MAX_MB: "1",
+        WEBSPS_RECORDINGS_MAX_DAYS: "7",
+      },
+    }).retention;
+    expect(custom).toMatchObject({
+      backupsPerFile: 5,
+      auditMaxBytes: 1024 * 1024,
+      recordingsMaxAgeDays: 7,
+    });
+    expect(() => loadConfig({ argv: [], env: { ...env, WEBSPS_KEEP_BACKUPS: "0" } })).toThrow(
+      "WEBSPS_KEEP_BACKUPS",
+    );
+  });
+
+  it("reads the retention block of the config file", () => {
+    const file = JSON.stringify({
+      retention: { backups_per_file: 3, audit_files: 2, recordings_max_count: 10 },
+      devices: [{ alias: "a", url: "http://x", auth: { user: "u", password_env: "P" } }],
+    });
+    const config = loadConfig({
+      argv: ["--config", "/r.json"],
+      env: { P: "x" },
+      readFile: files({ "/r.json": file }),
+    });
+    expect(config.retention).toMatchObject({
+      backupsPerFile: 3,
+      auditFiles: 2,
+      recordingsMaxCount: 10,
+    });
+  });
+});

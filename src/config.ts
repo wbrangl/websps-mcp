@@ -29,11 +29,34 @@ export interface DeviceConfig {
   methodTimeoutsMs: Record<string, number>;
 }
 
+/** How much the state directory keeps; old data is removed when new data is written. */
+export interface Retention {
+  /** Backups kept per device file. */
+  backupsPerFile: number;
+  /** Size at which audit.jsonl is rotated. */
+  auditMaxBytes: number;
+  /** Rotated audit files kept (audit.jsonl.1 … .N). */
+  auditFiles: number;
+  /** Recordings older than this are removed. */
+  recordingsMaxAgeDays: number;
+  /** At most this many recordings are kept per device. */
+  recordingsMaxCount: number;
+}
+
+export const DEFAULT_RETENTION: Readonly<Retention> = {
+  backupsPerFile: 20,
+  auditMaxBytes: 10 * 1024 * 1024,
+  auditFiles: 5,
+  recordingsMaxAgeDays: 30,
+  recordingsMaxCount: 100,
+};
+
 export interface ServerConfig {
   profile: Profile;
   devices: DeviceConfig[];
   /** Persistent server state (log accumulator, recordings, audit log, backups). Created lazily. */
   stateDir: string;
+  retention: Retention;
 }
 
 export class ConfigError extends Error {}
@@ -47,6 +70,15 @@ const timeoutSchema = z.number().int().positive();
 const fileSchema = z.strictObject({
   profile: z.enum(PROFILES).optional(),
   state_dir: z.string().min(1).optional(),
+  retention: z
+    .strictObject({
+      backups_per_file: z.number().int().min(1).optional(),
+      audit_max_mb: z.number().positive().optional(),
+      audit_files: z.number().int().min(1).optional(),
+      recordings_max_age_days: z.number().positive().optional(),
+      recordings_max_count: z.number().int().min(1).optional(),
+    })
+    .optional(),
   devices: z
     .array(
       z.strictObject({
@@ -101,6 +133,7 @@ export function loadConfig(options: LoadConfigOptions = {}): ServerConfig {
       profile: envProfile ?? "read",
       devices: [deviceFromEnv(env, readFile)],
       stateDir: stateDirFrom(env, undefined),
+      retention: retentionFrom(env, undefined),
     };
   }
   throw new ConfigError(
@@ -178,6 +211,31 @@ function loadFile(
       env,
       parsed.data.state_dir === undefined ? undefined : resolve(baseDir, parsed.data.state_dir),
     ),
+    retention: retentionFrom(env, parsed.data.retention),
+  };
+}
+
+/** Environment (`WEBSPS_KEEP_BACKUPS`, `WEBSPS_AUDIT_MAX_MB`, `WEBSPS_RECORDINGS_MAX_DAYS`) > file > defaults. */
+function retentionFrom(env: Env, file: z.infer<typeof fileSchema>["retention"]): Retention {
+  const number = (name: string, min: number): number | undefined => {
+    const raw = env[name];
+    if (raw === undefined || raw === "") return undefined;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < min) {
+      throw new ConfigError(`${name} must be a number of at least ${min}, got "${raw}"`);
+    }
+    return value;
+  };
+  const backups = number("WEBSPS_KEEP_BACKUPS", 1) ?? file?.backups_per_file;
+  const auditMb = number("WEBSPS_AUDIT_MAX_MB", 0.001) ?? file?.audit_max_mb;
+  const days = number("WEBSPS_RECORDINGS_MAX_DAYS", 0.001) ?? file?.recordings_max_age_days;
+  return {
+    backupsPerFile: backups !== undefined ? Math.floor(backups) : DEFAULT_RETENTION.backupsPerFile,
+    auditMaxBytes:
+      auditMb !== undefined ? Math.round(auditMb * 1024 * 1024) : DEFAULT_RETENTION.auditMaxBytes,
+    auditFiles: file?.audit_files ?? DEFAULT_RETENTION.auditFiles,
+    recordingsMaxAgeDays: days ?? DEFAULT_RETENTION.recordingsMaxAgeDays,
+    recordingsMaxCount: file?.recordings_max_count ?? DEFAULT_RETENTION.recordingsMaxCount,
   };
 }
 

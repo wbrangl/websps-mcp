@@ -114,6 +114,7 @@ Pass a JSON file with `--config <path>` or `WEBSPS_CONFIG`:
 |---|---|
 | `profile` | `read` (default), `operate`, `develop` or `admin` — see [Profiles and tools](#profiles-and-tools) |
 | `state_dir` | Directory for logs, recordings, audit log and backups; relative to the config file |
+| `retention` | Optional limits for the state directory, see [State directory](#state-directory) |
 | `devices[].alias` | Name the agent uses (`device` parameter); 1–32 letters, digits, `_`, `-` |
 | `devices[].url` | `http://` address of the device |
 | `devices[].auth.user` | Device user name |
@@ -143,6 +144,7 @@ When more than one device is configured, every tool needs the `device` parameter
 |---|---|
 | `WEBSPS_PROFILE` | Profile; overrides `profile` from the file |
 | `WEBSPS_STATE_DIR` | State directory; overrides `state_dir` |
+| `WEBSPS_KEEP_BACKUPS`, `WEBSPS_AUDIT_MAX_MB`, `WEBSPS_RECORDINGS_MAX_DAYS` | Retention limits; override `retention` |
 | `WEBSPS_CONFIG` | Configuration file, alternative to `--config` |
 
 Use either a configuration file or `WEBSPS_URL`, not both.
@@ -277,7 +279,17 @@ Default: `$XDG_STATE_HOME/websps-mcp` or `~/.local/state/websps-mcp` (on Windows
 | `backups/` | Previous content of every overwritten or deleted file, with timestamp |
 | `device.lock` | Lock between server processes (removed automatically) |
 
-Nothing is deleted automatically; clean up backups and recordings as needed.
+Old data is removed when new data is written (never while reading), with these defaults:
+
+| What | Default | `retention` field | Environment |
+|---|---|---|---|
+| Backups per device file | newest 20 | `backups_per_file` | `WEBSPS_KEEP_BACKUPS` |
+| Audit log | rotated at 10 MB (`audit.jsonl.1` …) | `audit_max_mb` | `WEBSPS_AUDIT_MAX_MB` |
+| Rotated audit files | 5 | `audit_files` | – |
+| Recordings | older than 30 days removed | `recordings_max_age_days` | `WEBSPS_RECORDINGS_MAX_DAYS` |
+| Recordings per device | newest 100 | `recordings_max_count` | – |
+
+A running recording is never removed. `console.jsonl` keeps the latest 5000 lines.
 
 ## Errors
 

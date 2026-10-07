@@ -112,8 +112,11 @@ Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Do
   `samples/<id>.jsonl` (Aufzeichnungen von `sample`, `src/device/sampler.ts`: Header, Samples, End-Zeile; nach
   Server-Neustart weiter lesbar), `audit.jsonl` (jeder Aufruf eines schreibenden Tools inkl. Fehlschlägen, ohne
   Secrets und ohne Dateiinhalte — `auditedHandler` in `tools/common.ts`), `backups/<zeitstempel>_<pfad>` (alter
-  Inhalt vor jedem Überschreiben/Löschen; das Gerät hält nur eine `.BAK`-Generation), `device.lock`. Tests setzen
-  immer ein temporäres `WEBSPS_STATE_DIR`.
+  Inhalt vor jedem Überschreiben/Löschen; das Gerät hält nur eine `.BAK`-Generation), `device.lock`. Aufbewahrung (`Retention` in
+  `src/config.ts`, JSON `retention` bzw. `WEBSPS_KEEP_BACKUPS`/`WEBSPS_AUDIT_MAX_MB`/`WEBSPS_RECORDINGS_MAX_DAYS`):
+  20 Backups je Datei, Audit-Rotation ab 10 MB × 5, Aufzeichnungen 30 Tage/100 Stück, Konsole 5000 Zeilen —
+  aufgeräumt wird nur beim Schreiben, laufende Aufzeichnungen nie. Tests setzen immer ein temporäres
+  `WEBSPS_STATE_DIR`.
 - **Sicheres Schreiben** (`safeWrite` in `src/device/fileOps.ts`, genutzt von `rules_write`/`file_write`):
   existiert die Datei, ist `expected_hash` Pflicht und wird vorab geprüft → Backup → Upload mit Hash → danach
   CRC der Gerätedatei gegen das Gesendete prüfen. `rules_write` validiert vorher immer (Gerät + `lintRules` aus

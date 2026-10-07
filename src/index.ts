@@ -15,7 +15,7 @@ try {
 
 const app = {
   profile: config.profile,
-  devices: new DeviceRegistry(config.devices, config.stateDir),
+  devices: new DeviceRegistry(config.devices, config.stateDir, {}, config.retention),
 };
 console.error(
   `websps-mcp: profile ${app.profile}, state ${config.stateDir}, devices: ${config.devices.map((d) => `${d.alias} (${d.url})`).join(", ")}`,
