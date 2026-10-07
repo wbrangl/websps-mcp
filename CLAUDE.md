@@ -31,6 +31,19 @@ nicht öffentlichen Unterlagen in committete Dateien, Commits oder Testdaten üb
 Werksadresse `192.168.2.102` aus dem Handbuch (weitere Geräte `.103` usw.). Schreibweise immer `Web@SPS`; als
 Schriftzug wie in der Geräte-Web-UI (weißes „Web@“, rotes kursives „SPS“, `docs/websps-wordmark.svg`).
 
+## Release
+
+Einzige Versionsquelle ist `package.json` (der Server meldet sie auch im Handshake). Ablauf:
+
+1. `npm version <x.y.z> --no-git-tag-version`, README-Beispiele (`websps-mcp@x.y.z`, `websps-mcp:x.y.z`) anpassen.
+2. `npm run typecheck && npm run lint && npm test`, committen.
+3. Git-Tag `v<x.y.z>` setzen.
+4. Image: `docker build --build-arg VERSION=<x.y.z> --build-arg REVISION=$(git rev-parse HEAD)
+   --build-arg SOURCE=<repo-url> -t websps-mcp:<x.y.z> .` (setzt die OCI-Labels; prüfen mit
+   `docker image inspect`). Basis-Image ist per Digest gepinnt (`NODE_IMAGE` im `Dockerfile`) — pro Release bewusst
+   aktualisieren.
+5. Dokumentierte Konfigurationen nennen immer eine feste Version, nie `:latest`.
+
 ## Worum es geht
 
 Ein MCP-Server, über den beliebige Agenten-Plattformen (Claude, OpenAI, Hermes, OpenClaw, Ontheia, …)
