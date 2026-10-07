@@ -328,7 +328,8 @@ are published, build it yourself:
 docker build -t websps-mcp:0.1.0 .
 ```
 
-Client configuration (`-i` keeps stdin open for the protocol; do not add `-t`):
+Recommended client configuration — hardened, with the password in a mounted file (`-i` keeps stdin
+open for the protocol; do not add `-t`):
 
 ```json
 {
@@ -337,7 +338,10 @@ Client configuration (`-i` keeps stdin open for the protocol; do not add `-t`):
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
+        "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--pids-limit", "64", "--memory", "256m",
         "--env-file", "/etc/websps/websps.env",
+        "-v", "/etc/websps:/config:ro",
         "-v", "websps-state:/state",
         "websps-mcp:0.1.0"
       ]
@@ -346,16 +350,33 @@ Client configuration (`-i` keeps stdin open for the protocol; do not add `-t`):
 }
 ```
 
-with `/etc/websps/websps.env` containing `WEBSPS_URL=http://192.168.2.102`, `WEBSPS_USER=…`,
-`WEBSPS_PASSWORD=…` and `WEBSPS_PROFILE=…` — an env file keeps the password out of the client
-configuration and the process list.
+with `/etc/websps/websps.env`:
 
-For several devices, mount the configuration directory and pass the file:
+```sh
+WEBSPS_URL=http://192.168.2.102
+WEBSPS_USER=api_user
+WEBSPS_PASSWORD_FILE=/config/websps.pw
+WEBSPS_PROFILE=read
+```
+
+and the password alone in `/etc/websps/websps.pw` (readable for the container user, see below).
+
+Why a password file: values passed with `-e` or `--env-file` stay out of the client configuration and
+the process list, but anyone with access to the Docker daemon can read them with `docker inspect`.
+A mounted file is not part of the container configuration. `WEBSPS_PASSWORD` in the env file works
+too if that is acceptable.
+
+The server needs no writable file system apart from `/state` and opens no ports, so `--read-only`
+and dropping all capabilities do not restrict it.
+
+For several devices, pass the configuration file instead (its `password_file` entries point into
+`/config`):
 
 ```json
 "args": [
   "run", "-i", "--rm",
-  "--env-file", "/etc/websps/websps.env",
+  "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+  "--pids-limit", "64", "--memory", "256m",
   "-v", "/etc/websps:/config:ro",
   "-v", "websps-state:/state",
   "websps-mcp:0.1.0", "--config", "/config/devices.json"
