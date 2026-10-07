@@ -4,12 +4,15 @@ import { appendJsonl } from "../state.js";
 
 export interface AuditEntry {
   at: string;
+  /** Same for the `started` entry and the result entry of one call. */
+  id: string;
   tool: string;
   profile: string;
   /** Arguments without secrets and without file contents (only their size and CRC). */
   args: Record<string, unknown>;
-  outcome: "ok" | "error";
-  result?: unknown;
+  /** `started` is written before the operation, so a crash mid-write still leaves a trace. */
+  outcome: "started" | "ok" | "error";
+  duration_ms?: number;
   error?: unknown;
 }
 

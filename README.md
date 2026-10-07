@@ -275,7 +275,7 @@ Default: `$XDG_STATE_HOME/websps-mcp` or `~/.local/state/websps-mcp` (on Windows
 |---|---|
 | `console.jsonl` | Console messages collected by `log_read` |
 | `samples/<id>.jsonl` | Recordings of `sample`, readable after a server restart |
-| `audit.jsonl` | One line per write tool call: time, tool, profile, arguments (without secrets and file contents), outcome |
+| `audit.jsonl` | Two lines per write tool call, sharing an `id`: `outcome: "started"` before the operation, then `ok` or `error` with `duration_ms`; each with time, tool, profile and arguments (without secrets and file contents). A `started` line without result marks a call that was interrupted. |
 | `backups/` | Previous content of every overwritten or deleted file, with timestamp |
 | `device.lock` | Lock between server processes (removed automatically) |
 

@@ -209,13 +209,25 @@ describe("files, labels and configuration", () => {
 });
 
 describe("audit log", () => {
-  it("records every write call without secrets or contents", async () => {
+  it("records every write call before and after, without secrets or contents", async () => {
     const dir = join(stateDir, "websps");
     const lines = (await readFile(join(dir, "audit.jsonl"), "utf8")).trim().split("\n");
     const entries = lines.map((l) => JSON.parse(l));
     expect(entries.some((e) => e.tool === "rules_write" && e.args.content_bytes > 0)).toBe(true);
     expect(entries.every((e) => e.args.content === undefined)).toBe(true);
-    const secret = entries.find((e) => e.tool === "config_set" && e.args.key === "admin_password");
+
+    // Each call: a "started" entry before the operation and a result entry with the same id.
+    const started = entries.filter((e) => e.outcome === "started");
+    const results = entries.filter((e) => e.outcome !== "started");
+    expect(started.length).toBe(results.length);
+    for (const result of results) {
+      const start = started.find((s) => s.id === result.id);
+      expect(start).toMatchObject({ tool: result.tool, args: result.args });
+      expect(entries.indexOf(start)).toBeLessThan(entries.indexOf(result));
+      expect(typeof result.duration_ms).toBe("number");
+    }
+
+    const secret = results.find((e) => e.tool === "config_set" && e.args.key === "admin_password");
     expect(secret).toMatchObject({ outcome: "error", args: { value: "***" } });
     expect(lines.join("\n")).not.toContain("leak");
     expect((await readdir(join(dir, "backups"))).length).toBeGreaterThan(0);

@@ -39,6 +39,7 @@ describe("AuditLog", () => {
     const log = new AuditLog(file, { maxBytes: 200, files: 2 });
     const entry = (i: number) => ({
       at: `t${i}`,
+      id: `id${i}`,
       tool: "io_write",
       profile: "operate",
       args: { padding: "x".repeat(80) },

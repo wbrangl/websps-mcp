@@ -111,8 +111,9 @@ Veröffentlichung (npm, Image-Registry, GitHub).
   angelegt. Inhalt: `console.jsonl` (Konsolen-Akkumulator, `src/device/consoleLog.ts`: holt bei jedem `log_read`
   die 25 Gerätezeilen und hängt neue per `seq` an; Cursor ist die eigene `pos`, da `seq` beim Reboot neu beginnt),
   `samples/<id>.jsonl` (Aufzeichnungen von `sample`, `src/device/sampler.ts`: Header, Samples, End-Zeile; nach
-  Server-Neustart weiter lesbar), `audit.jsonl` (jeder Aufruf eines schreibenden Tools inkl. Fehlschlägen, ohne
-  Secrets und ohne Dateiinhalte — `auditedHandler` in `tools/common.ts`), `backups/<zeitstempel>_<pfad>` (alter
+  Server-Neustart weiter lesbar), `audit.jsonl` (jeder Aufruf eines schreibenden Tools: Eintrag `started` vor der
+  Operation, danach `ok`/`error` mit gleicher `id` und `duration_ms`; ohne Secrets und ohne Dateiinhalte —
+  `auditedHandler` in `tools/common.ts`), `backups/<zeitstempel>_<pfad>` (alter
   Inhalt vor jedem Überschreiben/Löschen; das Gerät hält nur eine `.BAK`-Generation), `device.lock`. Aufbewahrung (`Retention` in
   `src/config.ts`, JSON `retention` bzw. `WEBSPS_KEEP_BACKUPS`/`WEBSPS_AUDIT_MAX_MB`/`WEBSPS_RECORDINGS_MAX_DAYS`):
   20 Backups je Datei, Audit-Rotation ab 10 MB × 5, Aufzeichnungen 30 Tage/100 Stück, Konsole 5000 Zeilen —
