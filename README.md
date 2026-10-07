@@ -175,7 +175,7 @@ add a second server entry with its own profile.
 | `rules_validate` | develop | Check rules content without writing |
 | `rules_write` | develop | Write a rules file (validated, backed up, not activated) |
 | `rules_activate` | develop | Make a rules file the running program; replacing the running file needs `expected_root` |
-| `io_label_set` | develop | Set or delete a channel label |
+| `io_label_set` | develop | Set or delete a channel label; returns the `previous_label` for undo |
 | `file_write` | develop | Write visualization pages, SVGs and mail templates |
 | `file_delete` | develop | Delete a file (backed up first) |
 | `device_control` | develop | RUN / STOP the program, request an NTP sync |
@@ -283,7 +283,7 @@ Default: `$XDG_STATE_HOME/websps-mcp` or `~/.local/state/websps-mcp` (on Windows
 |---|---|
 | `console.jsonl` | Console messages collected by `log_read` |
 | `samples/<id>.jsonl` | Recordings of `sample`, readable after a server restart |
-| `audit.jsonl` | Two lines per write tool call, sharing an `id`: `outcome: "started"` before the operation, then `ok` or `error` with `duration_ms`; each with time, tool, profile and arguments (without secrets and file contents). A `started` line without result marks a call that was interrupted. |
+| `audit.jsonl` | Two lines per write tool call, sharing an `id`: `outcome: "started"` before the operation, then `ok` or `error` with `duration_ms`; each with time, tool, profile and arguments (without secrets and file contents). `ok` lines of some tools add a `result` with what is needed to trace or undo the change: previous label, previous and new root rules file, backup name and checksum of written files, previous configuration value. A `started` line without result marks a call that was interrupted. |
 | `backups/` | Previous content of every overwritten or deleted file, with timestamp |
 | `device.lock` | Lock between server processes (removed automatically) |
 

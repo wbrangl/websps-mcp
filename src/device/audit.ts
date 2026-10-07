@@ -13,6 +13,8 @@ export interface AuditEntry {
   /** `started` is written before the operation, so a crash mid-write still leaves a trace. */
   outcome: "started" | "ok" | "error";
   duration_ms?: number;
+  /** Selected result fields (never secrets or file contents), e.g. previous values. */
+  result?: Record<string, unknown>;
   error?: unknown;
 }
 

@@ -158,6 +158,7 @@ export const rulesWrite: ToolDefinition = {
             next: `rules_activate with name ${file} loads it`,
           };
         },
+        ({ path, crc16, created, backup }) => ({ path, crc16, created, backup }),
       ),
     );
   },
@@ -257,6 +258,7 @@ export const rulesActivate: ToolDefinition = {
             });
           }
         },
+        ({ root, previous_root }) => ({ root, previous_root }),
       ),
     );
   },

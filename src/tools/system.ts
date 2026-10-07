@@ -58,6 +58,7 @@ export const configSet: ToolDefinition = {
             result,
           };
         },
+        ({ key, previous, value }) => ({ key, previous, value }),
       ),
     );
   },

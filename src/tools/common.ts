@@ -62,13 +62,16 @@ export function handler<A>(fn: (args: A) => Promise<Record<string, unknown>>) {
 
 /**
  * Handler for tools that change something on the device: resolves the device and records every
- * call, successful or not, in the device's audit log (`redact` removes secrets and contents).
+ * call, successful or not, in the device's audit log (`redact` removes secrets and contents;
+ * `summarize` picks result fields worth keeping, e.g. the previous value, so a change can be
+ * traced and undone).
  */
 export function auditedHandler<A extends { device?: string | undefined }>(
   app: App,
   tool: string,
   redact: (args: A) => Record<string, unknown>,
   fn: (device: Device, args: A) => Promise<Record<string, unknown>>,
+  summarize?: (result: Record<string, unknown>) => Record<string, unknown>,
 ) {
   return handler(async (args: A) => {
     const device = app.devices.resolve(args.device);
@@ -81,7 +84,11 @@ export function auditedHandler<A extends { device?: string | undefined }>(
     await audit({});
     try {
       const result = await fn(device, args);
-      await audit({ outcome: "ok", duration_ms: Date.now() - started });
+      await audit({
+        outcome: "ok",
+        duration_ms: Date.now() - started,
+        ...(summarize !== undefined && { result: summarize(result) }),
+      });
       return result;
     } catch (error) {
       const payload = error instanceof WebspsError ? error.toPayload() : String(error);

@@ -157,6 +157,7 @@ export const fileWrite: ToolDefinition = {
           );
           return { device: device.alias, ...outcome };
         },
+        ({ path, crc16, created, backup }) => ({ path, crc16, created, backup }),
       ),
     );
   },
@@ -218,6 +219,7 @@ export const fileDelete: ToolDefinition = {
             result,
           };
         },
+        ({ path, backup }) => ({ path, backup }),
       ),
     );
   },

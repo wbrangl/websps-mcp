@@ -113,7 +113,8 @@ Veröffentlichung (npm, Image-Registry, GitHub).
   `samples/<id>.jsonl` (Aufzeichnungen von `sample`, `src/device/sampler.ts`: Header, Samples, End-Zeile; nach
   Server-Neustart weiter lesbar), `audit.jsonl` (jeder Aufruf eines schreibenden Tools: Eintrag `started` vor der
   Operation, danach `ok`/`error` mit gleicher `id` und `duration_ms`; ohne Secrets und ohne Dateiinhalte —
-  `auditedHandler` in `tools/common.ts`), `backups/<zeitstempel>_<pfad>` (alter
+  `auditedHandler` in `tools/common.ts`, dessen optionale `summarize`-Funktion Ergebnisfelder für den `ok`-Eintrag
+  auswählt, z.B. `previous_label`, `previous_root`, `backup`/`crc16`, vorheriger Config-Wert), `backups/<zeitstempel>_<pfad>` (alter
   Inhalt vor jedem Überschreiben/Löschen; das Gerät hält nur eine `.BAK`-Generation), `device.lock`. Aufbewahrung (`Retention` in
   `src/config.ts`, JSON `retention` bzw. `WEBSPS_KEEP_BACKUPS`/`WEBSPS_AUDIT_MAX_MB`/`WEBSPS_RECORDINGS_MAX_DAYS`):
   20 Backups je Datei, Audit-Rotation ab 10 MB × 5, Aufzeichnungen 30 Tage/100 Stück, Konsole 5000 Zeilen —
@@ -215,6 +216,8 @@ Veröffentlichung (npm, Image-Registry, GitHub).
 - Rules-Zeilen vor dem Senden auf leere mittlere Parameter prüfen (strtok fasst aufeinanderfolgende `;` zusammen
   und verschiebt die Felder still; das Gerät warnt nur mit Code 110).
 - `io_write` erlaubt nur `S`/`M`/`V`/`U`/`AA`/`SW`.
+- `io_label_set` liest das bisherige Label **frisch** vom Gerät (nicht aus dem Cache), liefert `previous_label`
+  (`null`, wenn keins) und `changed`; bei unverändertem Wert wird nichts gesendet.
 - Tool-Ergebnisse: vollständiges Ergebnis als kompaktes JSON im Text-`content` plus `structuredContent`;
   Annotationen (`readOnlyHint`/`destructiveHint`) sind nur Hinweise. `tools/list` deterministisch sortieren.
   Diagnose über `stderr` (stdout gehört bei stdio dem Protokoll).

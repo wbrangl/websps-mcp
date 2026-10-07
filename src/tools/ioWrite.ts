@@ -190,7 +190,7 @@ export const ioLabelSet: ToolDefinition = {
       {
         title: "Set channel label",
         description:
-          'Set the human-readable label of a channel on the device (shown by io_labels/io_read), e.g. S0.0 → "Pool pump on". An empty label deletes it.',
+          'Set the human-readable label of a channel on the device (shown by io_labels/io_read), e.g. S0.0 → "Pool pump on". An empty label deletes it. The result contains `previous_label` (null if there was none) so the change can be undone; `changed: false` means the label already had that value and nothing was written.',
         inputSchema: z.object({
           device: deviceParam(app),
           channel: z.string().min(1),
@@ -217,18 +217,38 @@ export const ioLabelSet: ToolDefinition = {
           if (Buffer.byteLength(label) > MAX_LABEL_BYTES) {
             throw invalidInput(`Label is longer than ${MAX_LABEL_BYTES} bytes`);
           }
-          try {
+          // Read fresh from the device, not from the label cache, so the previous value is
+          // current. Reading and setting are not atomic on the device; a change in between by
+          // someone else would go unnoticed (very short window).
+          const current = await device.client.call<{ labels?: Record<string, string> }>(
+            "io.labels",
+          );
+          const previous = current.labels?.[name] ?? null;
+          if (previous === (label === "" ? null : label)) {
             return {
               device: device.alias,
-              ...(await device.client.call<Record<string, unknown>>("io.label_set", {
-                channel: name,
-                label,
-              })),
+              channel: name,
+              label,
+              previous_label: previous,
+              changed: false,
             };
+          }
+          try {
+            const result = await device.client.call<Record<string, unknown>>("io.label_set", {
+              channel: name,
+              label,
+            });
+            return { device: device.alias, ...result, previous_label: previous, changed: true };
           } finally {
             device.labels.invalidate();
           }
         },
+        ({ channel, label, previous_label, changed }) => ({
+          channel,
+          label,
+          previous_label,
+          changed,
+        }),
       ),
     );
   },

@@ -340,3 +340,55 @@ describe("rules_activate expected_root", () => {
     }
   });
 });
+
+describe("io_label_set previous_label", () => {
+  const labelSets = (before: number) =>
+    device.state.calls.slice(before).filter((c) => c === "io.label_set");
+
+  it("returns the previous label, null for a new one, and the removed text on delete", async () => {
+    const replaced = await call("io_label_set", { channel: "S0.0", label: "Pump" });
+    expect(replaced.body).toMatchObject({
+      previous_label: "Pump on",
+      changed: true,
+      label: "Pump",
+    });
+    const created = await call("io_label_set", { channel: "M8.0", label: "Fresh" });
+    expect(created.body).toMatchObject({ previous_label: null, changed: true });
+    const removed = await call("io_label_set", { channel: "M8.0", label: "" });
+    expect(removed.body).toMatchObject({ previous_label: "Fresh", changed: true });
+  });
+
+  it("writes nothing when the label already has the value", async () => {
+    const before = device.state.calls.length;
+    const same = await call("io_label_set", { channel: "S0.0", label: "Pump" });
+    expect(same.body).toMatchObject({ previous_label: "Pump", changed: false });
+    expect(labelSets(before)).toEqual([]);
+    const absent = await call("io_label_set", { channel: "M8.1", label: "" });
+    expect(absent.body).toMatchObject({ previous_label: null, changed: false });
+    expect(labelSets(before)).toEqual([]);
+  });
+
+  it("reads the previous label from the device, not from the cache", async () => {
+    await call("io_labels", {});
+    device.state.labels["S0.0"] = "Changed on the device";
+    const result = await call("io_label_set", { channel: "S0.0", label: "Pump on" });
+    expect(result.body.previous_label).toBe("Changed on the device");
+  });
+
+  it("keeps the previous label in the audit log", async () => {
+    const lines = (await readFile(join(stateDir, "websps", "audit.jsonl"), "utf8"))
+      .trim()
+      .split("\n");
+    const entries = lines.map((l) => JSON.parse(l));
+    const done = entries.filter((e) => e.tool === "io_label_set" && e.outcome === "ok");
+    expect(done.at(-1)?.result).toEqual({
+      channel: "S0.0",
+      label: "Pump on",
+      previous_label: "Changed on the device",
+      changed: true,
+    });
+    const activations = entries.filter((e) => e.tool === "rules_activate" && e.outcome === "ok");
+    expect(activations.at(-1)?.result).toMatchObject({ root: expect.any(String) });
+    expect(activations.at(-1)?.result).toHaveProperty("previous_root");
+  });
+});
