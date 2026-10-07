@@ -16,9 +16,12 @@ export async function connectServer(options: {
     args: [tsx, "src/index.ts"],
     env: {
       PATH: process.env.PATH ?? "",
-      WEBSPS_URL: options.url,
-      WEBSPS_USER: "api_user",
-      WEBSPS_PASSWORD: "secret",
+      // A config file (WEBSPS_CONFIG in env) replaces the single-device variables.
+      ...(options.env?.WEBSPS_CONFIG === undefined && {
+        WEBSPS_URL: options.url,
+        WEBSPS_USER: "api_user",
+        WEBSPS_PASSWORD: "secret",
+      }),
       WEBSPS_STATE_DIR: options.stateDir,
       ...options.env,
     },

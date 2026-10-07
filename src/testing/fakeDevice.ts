@@ -42,6 +42,8 @@ export interface FakeDeviceState {
   mirror: Record<string, string>;
   /** Partial chunked uploads by path and action. */
   uploads: Record<string, Buffer>;
+  /** Delay before answering rules.reload; the reload itself takes effect immediately. */
+  reloadDelayMs: number;
 }
 
 const STATUS = {
@@ -117,6 +119,7 @@ export function defaultState(): FakeDeviceState {
     status: { ...STATUS.RUN },
     mirror: { "S5.0": "A0.7" },
     uploads: {},
+    reloadDelayMs: 0,
   };
 }
 
@@ -148,9 +151,11 @@ export async function startFakeDevice(
       res.end(typeof reply === "string" ? reply : JSON.stringify(reply));
       return;
     }
-    res
-      .writeHead(200, { "content-type": "text/plain" })
-      .end(JSON.stringify(answer(state, req, body)));
+    const reply = answer(state, req, body);
+    if (state.reloadDelayMs > 0 && body.includes('"rules.reload"')) {
+      await new Promise((resolve) => setTimeout(resolve, state.reloadDelayMs));
+    }
+    res.writeHead(200, { "content-type": "text/plain" }).end(JSON.stringify(reply));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;

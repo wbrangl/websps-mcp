@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Client } from "@modelcontextprotocol/client";
@@ -220,4 +220,58 @@ describe("audit log", () => {
     expect(lines.join("\n")).not.toContain("leak");
     expect((await readdir(join(dir, "backups"))).length).toBeGreaterThan(0);
   });
+});
+
+describe("rules_activate with an unknown outcome", () => {
+  it("does not roll back when the reload only timed out", async () => {
+    const config = join(stateDir, "slow.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        profile: "develop",
+        devices: [
+          {
+            alias: "websps",
+            url: device.url,
+            auth: { user: "api_user", password_env: "PW" },
+            timeouts_ms: { "rules.reload": 300 },
+          },
+        ],
+      }),
+    );
+    const slow = await connectServer({
+      url: device.url,
+      stateDir,
+      env: { WEBSPS_CONFIG: config, PW: "secret" },
+    });
+    try {
+      const write = await slow.callTool({
+        name: "rules_write",
+        arguments: { name: "SLOW.TXT", content: "M0.0 = S0.0\n" },
+      });
+      expect(write.isError).toBeFalsy();
+      device.state.reloadDelayMs = 800;
+      const before = device.state.calls.length;
+      const result = await slow.callTool({
+        name: "rules_activate",
+        arguments: { name: "SLOW.TXT" },
+      });
+      device.state.reloadDelayMs = 0;
+      const body = parse(result);
+
+      expect(result.isError).toBe(true);
+      expect(body.error).toMatchObject({ code: 1004, name: "TIMEOUT" });
+      expect(body.error.hint).toContain("device_status");
+      expect(body.error.details.restored_previous_root).toBeUndefined();
+      // The device did load the new file; the server must not switch it back.
+      expect(device.state.root).toBe("SLOW.TXT");
+      const sent = device.state.calls.slice(before);
+      expect(sent.filter((c) => c === "rules.set_root")).toHaveLength(1);
+      expect(sent.filter((c) => c === "rules.reload")).toHaveLength(1);
+    } finally {
+      device.state.reloadDelayMs = 0;
+      await slow.close();
+      await call("rules_activate", { name: "TEST.TXT" });
+    }
+  }, 20_000);
 });

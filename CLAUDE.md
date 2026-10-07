@@ -104,9 +104,11 @@ Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Do
   existiert die Datei, ist `expected_hash` Pflicht und wird vorab geprüft → Backup → Upload mit Hash → danach
   CRC der Gerätedatei gegen das Gesendete prüfen. `rules_write` validiert vorher immer (Gerät + `lintRules` aus
   `src/device/rulesLint.ts`, Operatorliste live per `rules.operators`) und normalisiert auf CRLF.
-- **`rules_activate`**: setzt ggf. den Root, `rules.reload`; schlägt das Laden fehl und war es ein **Wechsel** auf
-  eine andere Datei, setzt der Server den vorherigen Root zurück und lädt ihn neu (das Gerät rollt nur auf die
-  `.BAK` derselben Datei zurück — eine neue Datei hat keine). Meldet danach `system.status`; nach einem
+- **`rules_activate`**: setzt ggf. den Root, `rules.reload`. Meldet das **Gerät** den Fehler (Code < 1000 außer
+  AUTH) und war es ein **Wechsel** auf eine andere Datei, setzt der Server den vorherigen Root zurück und lädt ihn
+  neu (das Gerät rollt nur auf die `.BAK` derselben Datei zurück — eine neue Datei hat keine). Bei Timeout,
+  Netzwerk- oder Circuit-Breaker-Fehlern ist das Ergebnis unbekannt (das einfädige Gerät lädt evtl. noch
+  erfolgreich): **kein** Rollback, Hinweis auf `device_status`. Meldet danach `system.status`; nach einem
   Fehlschlag bleibt das Gerät in STOP und braucht `device_control RUN` (nur Profil `admin`).
 - **Secrets**: `config_get` maskiert Felder mit `secret:true` im Schema **und** Namen wie `*pass*`/`*token*` immer
   als `***` (`src/device/configSchema.ts`) — unabhängig davon, ob der Gerätebenutzer `config_secrets` hat.

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { encodeText, safeWrite } from "../device/fileOps.js";
 import type { Device } from "../device/registry.js";
 import { lintRules, type RulesOperator } from "../device/rulesLint.js";
-import { DeviceErrorCode, WebspsError } from "../errors.js";
+import { DeviceErrorCode, ServerErrorCode, WebspsError } from "../errors.js";
 import {
   auditedHandler,
   DESTRUCTIVE,
@@ -205,6 +205,20 @@ export const rulesActivate: ToolDefinition = {
             };
           } catch (error) {
             if (!(error instanceof WebspsError)) throw error;
+            // Only an answer from the device proves the load failed. A timeout, an unreachable
+            // device or the auth circuit breaker leave the outcome open: the single-threaded
+            // device may still be loading successfully, so rolling back would undo a good load.
+            if (error.code === DeviceErrorCode.AUTH || error.code >= ServerErrorCode.SERVER_ERROR) {
+              throw new WebspsError(
+                error.code,
+                `Activating ${target}: outcome unknown (${error.message})`,
+                {
+                  device: device.alias,
+                  hint: "The device may have loaded the file anyway. Check device_status (active rules file, status) before trying again.",
+                  details: { target, previous_root: previous },
+                },
+              );
+            }
             let restored: string | undefined;
             let restoreError: unknown;
             if (switching && previous !== undefined) {

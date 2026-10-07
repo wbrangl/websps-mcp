@@ -250,7 +250,8 @@ The intended sequence is `rules_validate` → `rules_write` → `rules_activate`
 3. **Activate.** `rules_activate` sets the root rules file and loads it. If loading fails, the device
    falls back to the file's `.BAK` copy where one exists; if the server switched to a different file,
    it also restores the previous root file. After a failed load the device stays in **STOP** — check
-   the result, then resume with `device_control` `RUN`.
+   the result, then resume with `device_control` `RUN`. If the device does not answer in time, the
+   outcome is unknown and nothing is rolled back: check `device_status` before trying again.
 
 The active root rules file cannot be deleted through the server.
 
