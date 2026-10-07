@@ -73,8 +73,9 @@ Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Do
   `profile` der Datei; Standardprofil ist `read`. Dasselbe Gerät (Host) darf nur einmal konfiguriert sein — die
   IP-Sperre gilt pro anfragender IP, nicht pro Benutzer, und zwei Queues würden die Serialisierung aushebeln.
 - **Geräte-Client** (`src/device/client.ts`): eine Promise-Queue pro Gerät (Gerät ist einfädig); jeder Job hält
-  zusätzlich `STATE_DIR/<alias>/device.lock` (`src/device/lock.ts`, atomares `mkdir`, übernimmt Sperren toter
-  Prozesse bzw. nach 60 s) gegen parallele stdio-Prozesse. Code `5` BUSY → bis zu 3 Wiederholungen mit Backoff.
+  zusätzlich `STATE_DIR/<alias>/device.lock` (`src/device/lock.ts`, atomares `mkdir`; der Halter erneuert alle
+  10 s per Heartbeat den Zeitstempel, ohne Heartbeat gilt die Sperre nach 30 s als verwaist; bewusst **keine**
+  PID-/Hostname-Prüfung, die zwischen Containern nicht vergleichbar ist) gegen parallele stdio-Prozesse. Code `5` BUSY → bis zu 3 Wiederholungen mit Backoff.
   Body-Limit 8192 Byte wird vor dem Senden geprüft. `upload()` schreibt/validiert über `/files` in Chunks à 6000
   Byte (nie mitten in einer UTF-8-Sequenz) als **ein** Queue-Job, damit nichts zwischen die Chunks gerät.
 - **Circuit Breaker bei Auth-Fehlern** (`closed` → `open` → `probing` → `blocked`): Code `1` → 60s keine Anfragen,
