@@ -1,6 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { profileAllows } from "../profiles.js";
-import { configSet, deviceControl, deviceMaintenance, deviceReboot } from "./admin.js";
 import type { App, ToolDefinition } from "./common.js";
 import { configGet } from "./config.js";
 import { deviceStatus, devicesList } from "./devices.js";
@@ -11,6 +10,7 @@ import { ioLabelSet, ioWrite, recordingClear } from "./ioWrite.js";
 import { logRead } from "./logs.js";
 import { rulesActivate, rulesValidate, rulesWrite } from "./rules.js";
 import { sample } from "./sample.js";
+import { configSet, deviceControl, deviceMaintenance, deviceReboot } from "./system.js";
 
 const TOOLS: readonly ToolDefinition[] = [
   // read

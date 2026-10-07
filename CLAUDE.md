@@ -64,7 +64,8 @@ auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
 ## Architektur
 
 Umgesetzt: alle 23 Tools (Profile read 11 · operate 13 · develop 21 · admin 23), `STATE_DIR` mit Audit-Log und
-Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Docker, Doku).
+Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Noch offen: Remote-HTTP-Adapter,
+Veröffentlichung (npm, Image-Registry, GitHub).
 
 - **Transportfreier Kern.** `src/index.ts` (stdio-Adapter: Config laden, `serveStdio`) → `src/server.ts`
   (`createServer(app)`, auch für einen späteren HTTP-Adapter). Die SDK-Factory kann pro Verbindung/Era mehrfach
@@ -126,7 +127,7 @@ Backups, Sperrdatei pro Gerät. Noch offen: Remote-HTTP-Adapter, Kundenpaket (Do
   neu (das Gerät rollt nur auf die `.BAK` derselben Datei zurück — eine neue Datei hat keine). Bei Timeout,
   Netzwerk- oder Circuit-Breaker-Fehlern ist das Ergebnis unbekannt (das einfädige Gerät lädt evtl. noch
   erfolgreich): **kein** Rollback, Hinweis auf `device_status`. Meldet danach `system.status`; nach einem
-  Fehlschlag bleibt das Gerät in STOP und braucht `device_control RUN` (nur Profil `admin`).
+  Fehlschlag bleibt das Gerät in STOP und braucht `device_control RUN` (ab Profil `develop`).
 - **Secrets**: `config_get` maskiert Felder mit `secret:true` im Schema **und** Namen wie `*pass*`/`*token*` immer
   als `***` (`src/device/configSchema.ts`) — unabhängig davon, ob der Gerätebenutzer `config_secrets` hat.
 - **Ergebnisse aufbereitet, Nicht-Zuordenbares unverändert im Feld `extra`.**
