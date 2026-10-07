@@ -25,6 +25,7 @@ clients that use the `initialize` handshake.
 - [State directory](#state-directory)
 - [Errors](#errors)
 - [Docker](#docker)
+  - [Optional: password in a file](#optional-password-in-a-file-shared-hosts-orchestrators)
 - [Running from source](#running-from-source)
 - [License](#license)
 
@@ -90,7 +91,7 @@ Pass a JSON file with `--config <path>` or `WEBSPS_CONFIG`:
     {
       "alias": "garden",
       "url": "http://192.168.2.103",
-      "auth": { "user": "api_user", "password_file": "/etc/websps/garden.pw" },
+      "auth": { "user": "api_user", "password_env": "WEBSPS_GARDEN_PW" },
       "timeout_ms": 8000,
       "timeouts_ms": { "io.read_all": 10000 }
     }
@@ -104,7 +105,7 @@ Pass a JSON file with `--config <path>` or `WEBSPS_CONFIG`:
     "websps": {
       "command": "npx",
       "args": ["-y", "websps-mcp@0.1.0", "--config", "/etc/websps/devices.json"],
-      "env": { "WEBSPS_POOL_PW": "change-me" }
+      "env": { "WEBSPS_POOL_PW": "change-me", "WEBSPS_GARDEN_PW": "change-me-too" }
     }
   }
 }
@@ -216,6 +217,9 @@ Notes:
   credentials in clear text, handles one request at a time and locks out an IP after five failed
   logins — anyone who can reach it could block or overload the plant.
 - Put the device into a separate network segment and use passwords that are not used anywhere else.
+- The device password is part of the client configuration or environment, as with other MCP servers.
+  Where that is not acceptable (shared hosts, orchestrators), use a password file instead — see
+  [Optional: password in a file](#optional-password-in-a-file-shared-hosts-orchestrators).
 - Only the MCP server talks to the device. In this release the server runs locally (stdio) next to the
   client; it opens no network port itself.
 - Secrets from the device configuration are always shown as `***`, even if the device user is allowed
@@ -328,8 +332,7 @@ are published, build it yourself:
 docker build -t websps-mcp:0.1.0 .
 ```
 
-Recommended client configuration — hardened, with the password in a mounted file (`-i` keeps stdin
-open for the protocol; do not add `-t`):
+Recommended client configuration (`-i` keeps stdin open for the protocol; do not add `-t`):
 
 ```json
 {
@@ -340,62 +343,99 @@ open for the protocol; do not add `-t`):
         "run", "-i", "--rm",
         "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
         "--pids-limit", "64", "--memory", "256m",
-        "--env-file", "/etc/websps/websps.env",
-        "-v", "/etc/websps:/config:ro",
+        "-e", "WEBSPS_URL", "-e", "WEBSPS_USER", "-e", "WEBSPS_PASSWORD", "-e", "WEBSPS_PROFILE",
         "-v", "websps-state:/state",
         "websps-mcp:0.1.0"
-      ]
+      ],
+      "env": {
+        "WEBSPS_URL": "http://192.168.2.102",
+        "WEBSPS_USER": "api_user",
+        "WEBSPS_PASSWORD": "change-me",
+        "WEBSPS_PROFILE": "read"
+      }
     }
   }
 }
 ```
 
-with `/etc/websps/websps.env`:
+`-e NAME` without a value passes the variable from the environment of the `docker` call (the `env`
+of the client configuration) into the container, so the password is not part of the arguments and
+not visible in the process list. Never write `-e WEBSPS_PASSWORD=…` into the arguments.
 
-```sh
-WEBSPS_URL=http://192.168.2.102
-WEBSPS_USER=api_user
-WEBSPS_PASSWORD_FILE=/config/websps.pw
-WEBSPS_PROFILE=read
-```
+The server needs no writable file system apart from `/state` and opens no ports, so `--read-only`,
+dropping all capabilities and the resource limits do not restrict it.
 
-and the password alone in `/etc/websps/websps.pw` (readable for the container user, see below).
-
-Why a password file: values passed with `-e` or `--env-file` stay out of the client configuration and
-the process list, but anyone with access to the Docker daemon can read them with `docker inspect`.
-A mounted file is not part of the container configuration. `WEBSPS_PASSWORD` in the env file works
-too if that is acceptable.
-
-The server needs no writable file system apart from `/state` and opens no ports, so `--read-only`
-and dropping all capabilities do not restrict it.
-
-For several devices, pass the configuration file instead (its `password_file` entries point into
-`/config`):
+For several devices, mount the configuration file and pass each device's password variable
+(`password_env` in the file) the same way:
 
 ```json
 "args": [
   "run", "-i", "--rm",
   "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
   "--pids-limit", "64", "--memory", "256m",
+  "-e", "WEBSPS_POOL_PW", "-e", "WEBSPS_GARDEN_PW",
   "-v", "/etc/websps:/config:ro",
   "-v", "websps-state:/state",
   "websps-mcp:0.1.0", "--config", "/config/devices.json"
-]
+],
+"env": { "WEBSPS_POOL_PW": "change-me", "WEBSPS_GARDEN_PW": "change-me-too" }
 ```
 
 - The state directory inside the container is `/state`. Use a **named volume** (as above), and the
   **same** one for all containers of a device so they share logs and backups and coordinate their
   access to the device. A new named volume takes over the image's permissions, so it works with both
   rootful and rootless Docker.
-- **Bind mounts and file permissions:** the server runs as `node` (UID 1000 in the container). A host
-  directory mounted to `/state` must be writable for that user, and mounted configuration or password
-  files must be readable for it (a password file with mode `600` owned by your host user is not).
-  With rootless Docker, container UID 1000 is a different UID on the host (e.g. 100999, from
-  `/etc/subuid`), so a directory owned by your own user is not writable from the container. Prefer the
-  named volume for `/state`; for mounted files, adjust their owner or mode for the mapped UID.
+- If you bind-mount a host directory to `/state` instead: the server runs as `node` (UID 1000 in the
+  container), and the directory must be writable for that user. With rootless Docker, container UID
+  1000 is a different UID on the host (e.g. 100999, from `/etc/subuid`), so a directory owned by your
+  own user is not writable from the container — prefer the named volume.
+- Mounted configuration files must be readable for the container user (mode `644` is enough for a
+  file without secrets).
 - The container must be able to reach the device. The default bridge network usually can; otherwise
   use `--network host` (Linux).
 - The container runs as the unprivileged `node` user and opens no ports.
+
+### Optional: password in a file (shared hosts, orchestrators)
+
+Environment values of a container can be read by anyone who may use the Docker daemon
+(`docker inspect`). On a single-user host that makes no practical difference; on shared hosts, with
+orchestrator secrets, or when client configurations get shared (e.g. in tickets), keep the password
+in a file instead. A file also allows changing the password without a restart (see
+[How the server protects the device](#how-the-server-protects-the-device)).
+
+Use `WEBSPS_PASSWORD_FILE` instead of `WEBSPS_PASSWORD` (the two exclude each other; in a
+configuration file: `password_file` instead of `password_env`) and mount the directory read-only:
+
+```json
+"args": [
+  "run", "-i", "--rm",
+  "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+  "--pids-limit", "64", "--memory", "256m",
+  "-e", "WEBSPS_URL", "-e", "WEBSPS_USER", "-e", "WEBSPS_PROFILE",
+  "-e", "WEBSPS_PASSWORD_FILE=/config/websps.pw",
+  "-v", "/etc/websps:/config:ro",
+  "-v", "websps-state:/state",
+  "websps-mcp:0.1.0"
+]
+```
+
+The file holds only the password. It must be readable for the container user (UID 1000) but should
+not be readable for others. With rootless Docker, container UID 1000 maps to another host UID, so set
+the owner from inside a container (where root is your own host user):
+
+```sh
+docker run --rm --user 0 --entrypoint sh -v /etc/websps:/c websps-mcp:0.1.0 \
+  -c 'chown -R 1000:1000 /c && chmod 500 /c && chmod 400 /c/websps.pw'
+```
+
+Afterwards your host user can no longer read or change the files; to edit them, hand them back first:
+
+```sh
+docker run --rm --user 0 --entrypoint sh -v /etc/websps:/c websps-mcp:0.1.0 \
+  -c 'chown -R 0:0 /c && chmod 700 /c && chmod 600 /c/websps.pw'
+```
+
+With rootful Docker, `chown 1000 /etc/websps/websps.pw` and `chmod 400` on the host do the same.
 
 ## Running from source
 
