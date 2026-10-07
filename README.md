@@ -160,7 +160,7 @@ add a second server entry with its own profile.
 | Tool | Profile | What it does |
 |---|---|---|
 | `devices_list` | read | Configured devices, reachability, firmware |
-| `device_status` | read | Operating status, device info, active rules file, message box |
+| `device_status` | read | Operating status, device info, configured and running rules file, message box |
 | `io_read` | read | Channel values with labels, or the complete state of all operands |
 | `io_usage` | read | Which channel addresses the active rules use, and which are free |
 | `io_labels` | read | Human-readable channel names set on the device |

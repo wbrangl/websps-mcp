@@ -60,7 +60,7 @@ export const deviceStatus: ToolDefinition = {
       {
         title: "Device status",
         description:
-          "Operating status (RUN/STOP/error states), device and firmware info, active rules file and current message box entries of a device.",
+          "Operating status (RUN/STOP/error states), device and firmware info, the configured and the running (loaded) rules file, and current message box entries of a device.",
         inputSchema: z.object({ device: deviceParam(app) }),
         annotations: READ_ONLY,
       },
@@ -71,7 +71,12 @@ export const deviceStatus: ToolDefinition = {
 
 async function statusOf(app: App, alias: string | undefined): Promise<Record<string, unknown>> {
   const device = app.devices.resolve(alias);
-  const parts = { status: "system.status", info: "system.info", mbox: "system.mbox" } as const;
+  const parts = {
+    status: "system.status",
+    info: "system.info",
+    mbox: "system.mbox",
+    rules: "rules.get_root",
+  } as const;
   const result: Record<string, unknown> = { device: device.alias };
   const errors: Record<string, unknown> = {};
   let firstError: WebspsError | undefined;

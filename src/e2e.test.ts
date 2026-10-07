@@ -82,6 +82,7 @@ describe.each([
     const body = parse(await client.callTool({ name: "device_status", arguments: {} }));
     expect(body.status.status_text).toBe("RUN");
     expect(body.errors.mbox).toMatchObject({ code: 2, name: "FORBIDDEN" });
+    expect(body.rules).toEqual({ configured_root: "TEST.TXT", loaded_root: "TEST.TXT" });
   });
 
   it("reports used and free channels", async () => {
