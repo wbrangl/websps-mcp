@@ -174,7 +174,7 @@ add a second server entry with its own profile.
 | `recording_clear` | operate | Clear a data recorder channel |
 | `rules_validate` | develop | Check rules content without writing |
 | `rules_write` | develop | Write a rules file (validated, backed up, not activated) |
-| `rules_activate` | develop | Make a rules file the running program |
+| `rules_activate` | develop | Make a rules file the running program; replacing the running file needs `expected_root` |
 | `io_label_set` | develop | Set or delete a channel label |
 | `file_write` | develop | Write visualization pages, SVGs and mail templates |
 | `file_delete` | develop | Delete a file (backed up first) |
@@ -253,7 +253,11 @@ The intended sequence is `rules_validate` → `rules_write` → `rules_activate`
    (e.g. through the web interface), the write is refused. The previous content is saved in the state
    directory; the device itself keeps only one `.BAK` copy. Line endings are converted to CRLF.
    Writing does not activate anything.
-3. **Activate.** `rules_activate` sets the root rules file and loads it. If loading fails, the device
+3. **Activate.** `rules_activate` sets the root rules file and loads it. Loading a different file than
+   the one currently running replaces the program, so it needs `expected_root` with the name of the
+   file that runs now (as shown by `device_status`) — like `expected_hash` for writes, a wrong
+   assumption about the device then fails before anything changes. Reloading the running file needs
+   no confirmation. If loading fails, the device
    falls back to the file's `.BAK` copy where one exists; if the server switched to a different file,
    it also restores the previous root file. After a failed load the device stays in **STOP** — check
    the result, then resume with `device_control` `RUN`. If the device does not answer in time, the

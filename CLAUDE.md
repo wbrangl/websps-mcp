@@ -208,6 +208,10 @@ Veröffentlichung (npm, Image-Registry, GitHub).
 
 - `rules_write` führt immer zuerst `rules_validate` aus; Backup und `expected_hash` sind Pflicht; Schreiben aktiviert nichts.
 - `force` bei `rules.delete` nie nach außen geben (aktive Root-Datei bleibt über den Server unlöschbar).
+- `rules_activate` ersetzt das laufende Programm nur mit `expected_root` = **geladener** Root (`loaded_root`,
+  nicht `configured_root` — beide weichen nach `set_root` ohne Reload ab); sonst Fehler VALIDATION vor jedem
+  `set_root`/`reload`, `details.current_root` (und `configured_root`, falls abweichend). Reload der laufenden Datei
+  braucht keine Bestätigung.
 - Rules-Zeilen vor dem Senden auf leere mittlere Parameter prüfen (strtok fasst aufeinanderfolgende `;` zusammen
   und verschiebt die Felder still; das Gerät warnt nur mit Code 110).
 - `io_write` erlaubt nur `S`/`M`/`V`/`U`/`AA`/`SW`.

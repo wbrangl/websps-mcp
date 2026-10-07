@@ -172,34 +172,45 @@ export const rulesActivate: ToolDefinition = {
       {
         title: "Activate rules",
         description: [
-          "Make a rules file the active program and load it (takes a few seconds). Without `name` the configured root file is reloaded.",
-          "If loading fails, the device rolls back to its .BAK copy where one exists; when switching to another file the server also restores the previous root.",
+          "Make a rules file the active program and load it (takes a few seconds). Without `name` the configured root file is (re)loaded.",
+          "Loading a different file than the one currently running replaces the running program: then `expected_root` must name the",
+          "file that runs now (see device_status); otherwise nothing is changed and the error shows the actual state.",
+          "If loading fails, the device rolls back to its .BAK copy where one exists; after a switch the server also loads the previous file again.",
           "After a failed load the device may stay in STOP and needs device_control RUN.",
         ].join(" "),
-        inputSchema: z.object({ device: deviceParam(app), name: z.string().min(1).optional() }),
+        inputSchema: z.object({
+          device: deviceParam(app),
+          name: z.string().min(1).optional(),
+          expected_root: z.string().min(1).optional(),
+        }),
         annotations: DESTRUCTIVE,
       },
       auditedHandler(
         app,
         "rules_activate",
         (args) => ({ ...args }),
-        async (device, { name }) => {
+        async (device, { name, expected_root }) => {
           const before = await device.client.call<Root>("rules.get_root");
-          const previous = before.configured_root;
-          const target = name !== undefined ? rulesName(name) : previous;
+          const configured = before.configured_root;
+          // What runs now is what a load replaces; configured and loaded differ after a
+          // set_root without reload.
+          const running = before.loaded_root ?? configured;
+          const target = name !== undefined ? rulesName(name) : configured;
           if (target === undefined)
             throw invalidInput("No root rules file is configured; pass `name`");
+          const expected = expected_root !== undefined ? rulesName(expected_root) : undefined;
+          confirmSwitch(device, target, running, configured, expected);
           // Fail early on a missing file instead of leaving the device without a loadable root.
           await device.client.fileHash(`rules/${target}`);
 
-          const switching = previous !== undefined && target !== previous;
-          if (target !== previous) await device.client.call("rules.set_root", { name: target });
+          const switching = running !== undefined && target !== running;
+          if (target !== configured) await device.client.call("rules.set_root", { name: target });
           try {
             const reload = await device.client.call<Record<string, unknown>>("rules.reload");
             return {
               device: device.alias,
               root: target,
-              previous_root: previous,
+              previous_root: running,
               reload,
               status: await status(device),
             };
@@ -215,17 +226,17 @@ export const rulesActivate: ToolDefinition = {
                 {
                   device: device.alias,
                   hint: "The device may have loaded the file anyway. Check device_status (active rules file, status) before trying again.",
-                  details: { target, previous_root: previous },
+                  details: { target, previous_root: running },
                 },
               );
             }
             let restored: string | undefined;
             let restoreError: unknown;
-            if (switching && previous !== undefined) {
+            if (switching && running !== undefined) {
               try {
-                await device.client.call("rules.set_root", { name: previous });
+                await device.client.call("rules.set_root", { name: running });
                 await device.client.call("rules.reload");
-                restored = previous;
+                restored = running;
               } catch (e) {
                 restoreError = e instanceof WebspsError ? e.toPayload() : String(e);
               }
@@ -250,6 +261,36 @@ export const rulesActivate: ToolDefinition = {
     );
   },
 };
+
+/**
+ * Like expected_hash for writes: replacing the running program needs the caller to name what runs
+ * now, so a wrong assumption about the device state fails before anything changes. A caller may
+ * copy the value from the error; this makes the switch explicit, it does not replace a human
+ * approval.
+ */
+function confirmSwitch(
+  device: Device,
+  target: string,
+  running: string | undefined,
+  configured: string | undefined,
+  expected: string | undefined,
+): void {
+  const mismatch = expected !== undefined && running !== undefined && expected !== running;
+  const unconfirmed = running !== undefined && target !== running && expected === undefined;
+  if (!mismatch && !unconfirmed) return;
+  const message = mismatch
+    ? `expected_root is ${expected}, but ${running} is running`
+    : `Activating ${target} would replace the running rules ${running}; pass expected_root: "${running}" to confirm`;
+  throw new WebspsError(DeviceErrorCode.VALIDATION, message, {
+    device: device.alias,
+    hint: "Check with device_status whether replacing the running program is intended; nothing was changed.",
+    details: {
+      target,
+      current_root: running,
+      ...(configured !== undefined && configured !== running && { configured_root: configured }),
+    },
+  });
+}
 
 async function status(device: Device) {
   return device.client.call<{ status_code: number; status_text: string }>("system.status");

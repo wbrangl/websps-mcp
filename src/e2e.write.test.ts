@@ -139,13 +139,13 @@ describe("rules chain", () => {
   });
 
   it("activates a file and restores the previous root if loading fails", async () => {
-    const activated = await call("rules_activate", { name: "NEW.TXT" });
+    const activated = await call("rules_activate", { name: "NEW.TXT", expected_root: "TEST.TXT" });
     expect(activated.body).toMatchObject({ root: "NEW.TXT", previous_root: "TEST.TXT" });
     expect(device.state.loaded).toBe("NEW.TXT");
 
     // Passes validation but fails to load; a new file has no .BAK for the device to roll back to.
     await call("rules_write", { name: "BROKEN.TXT", content: "M0.0 = FAIL\n" });
-    const failed = await call("rules_activate", { name: "BROKEN.TXT" });
+    const failed = await call("rules_activate", { name: "BROKEN.TXT", expected_root: "NEW.TXT" });
     expect(failed.isError).toBe(true);
     expect(failed.body.error.details).toMatchObject({ restored_previous_root: "NEW.TXT" });
     expect(device.state.root).toBe("NEW.TXT");
@@ -153,7 +153,7 @@ describe("rules chain", () => {
     expect(failed.body.error.hint).toContain("device_control RUN");
 
     expect((await call("device_control", { command: "RUN" })).body.result.success).toBe(true);
-    await call("rules_activate", { name: "TEST.TXT" });
+    await call("rules_activate", { name: "TEST.TXT", expected_root: "NEW.TXT" });
   });
 
   it("protects the active root and internal files from deletion", async () => {
@@ -266,7 +266,7 @@ describe("rules_activate with an unknown outcome", () => {
       const before = device.state.calls.length;
       const result = await slow.callTool({
         name: "rules_activate",
-        arguments: { name: "SLOW.TXT" },
+        arguments: { name: "SLOW.TXT", expected_root: "TEST.TXT" },
       });
       device.state.reloadDelayMs = 0;
       const body = parse(result);
@@ -283,7 +283,60 @@ describe("rules_activate with an unknown outcome", () => {
     } finally {
       device.state.reloadDelayMs = 0;
       await slow.close();
-      await call("rules_activate", { name: "TEST.TXT" });
+      await call("rules_activate", { name: "TEST.TXT", expected_root: "SLOW.TXT" });
     }
   }, 20_000);
+});
+
+describe("rules_activate expected_root", () => {
+  const touched = (before: number) =>
+    device.state.calls.slice(before).filter((c) => c === "rules.set_root" || c === "rules.reload");
+
+  it("refuses to replace the running program without expected_root", async () => {
+    await call("rules_write", { name: "OTHER.TXT", content: "M0.2 = S0.2\n" });
+    const before = device.state.calls.length;
+    const result = await call("rules_activate", { name: "OTHER.TXT" });
+    expect(result.isError).toBe(true);
+    expect(result.body.error).toMatchObject({
+      code: 6,
+      details: { target: "OTHER.TXT", current_root: "TEST.TXT" },
+    });
+    expect(result.body.error.message).toContain('expected_root: "TEST.TXT"');
+    expect(touched(before)).toEqual([]);
+    expect(device.state.loaded).toBe("TEST.TXT");
+  });
+
+  it("refuses a wrong expected_root without touching the device", async () => {
+    const before = device.state.calls.length;
+    const result = await call("rules_activate", { name: "OTHER.TXT", expected_root: "ANALOG.TXT" });
+    expect(result.body.error).toMatchObject({ code: 6, details: { current_root: "TEST.TXT" } });
+    expect(touched(before)).toEqual([]);
+  });
+
+  it("switches with the right expected_root and reloads without it", async () => {
+    const switched = await call("rules_activate", { name: "other.txt", expected_root: "test.txt" });
+    expect(switched.body).toMatchObject({ root: "OTHER.TXT", previous_root: "TEST.TXT" });
+    expect((await call("rules_activate", {})).isError).toBe(false);
+    expect((await call("rules_activate", { name: "OTHER.TXT" })).isError).toBe(false);
+    await call("rules_activate", { name: "TEST.TXT", expected_root: "OTHER.TXT" });
+    expect(device.state.loaded).toBe("TEST.TXT");
+  });
+
+  it("compares with the running file when the configured root differs", async () => {
+    // set_root without reload: OTHER configured, TEST still running.
+    device.state.root = "OTHER.TXT";
+    try {
+      const before = device.state.calls.length;
+      const reload = await call("rules_activate", {});
+      expect(reload.body.error).toMatchObject({
+        code: 6,
+        details: { target: "OTHER.TXT", current_root: "TEST.TXT", configured_root: "OTHER.TXT" },
+      });
+      expect(touched(before)).toEqual([]);
+      const same = await call("rules_activate", { name: "TEST.TXT" });
+      expect(same.body).toMatchObject({ root: "TEST.TXT", previous_root: "TEST.TXT" });
+    } finally {
+      device.state.root = "TEST.TXT";
+    }
+  });
 });
