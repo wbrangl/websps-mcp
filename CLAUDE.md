@@ -225,6 +225,8 @@ Veröffentlichung (npm, Image-Registry, GitHub).
   alles andere stehen, Prüfung jedes Eintrags wie bei `io_label_set` (Kanal ≤15 Byte ohne `[]=`, Label ≤100 Byte
   ohne `[]=;`), dann `safeWrite` mit diesem CRC als `expected_hash` und danach `io.labels` gegenlesen (`applied`).
   Roh schreiben lässt sich `SYMBOLIK.INI` über `file_write` weiterhin **nicht**.
+  Am Gerät verifiziert: eine per `/files` geschriebene `SYMBOLIK.INI` gilt **sofort** (`io.labels` liefert sie, trotz
+  der Meldung „wirkt erst nach rules.reload“); das Gerät legt dabei wie bei jeder Datei `SYMBOLIK.BAK` an.
 - Tool-Ergebnisse: vollständiges Ergebnis als kompaktes JSON im Text-`content` plus `structuredContent`;
   Annotationen (`readOnlyHint`/`destructiveHint`) sind nur Hinweise. `tools/list` deterministisch sortieren.
   Diagnose über `stderr` (stdout gehört bei stdio dem Protokoll).
