@@ -193,8 +193,10 @@ Veröffentlichung (npm, Image-Registry, GitHub).
 - Bei `system.control` nur die Befehlsnamen verwenden, nie die Ziffern-Aliase.
 - **Upload-Format** `/files`: `<JSON-Header>\n---CONTENT---\n<Rohbytes>`; Header `{path, action?, chunk?, chunks?,
   expected_hash?}`. `expected_hash` prüft das Gerät **nur beim letzten Chunk** (deshalb bei jedem mitsenden).
-  `action:"validate"` geht auch in Chunks. Rules-Namen: 8.3 mit `.TXT`; schreibbar nur `rules/`, `mails/`, `svg/`,
-  `htm/`. Die Antwort meldet `"backup":"X.BAK"` auch dann, wenn es keine vorherige Datei gab.
+  `action:"validate"` geht auch in Chunks. Rules-Namen: 8.3 mit `.TXT`. Lesbare/beschreibbare Verzeichnisse meldet
+  `api.describe` (`file_endpoint_prefixes`/`file_endpoint_write_prefixes`); neuere Firmware hat `svg/` in
+  `scripts/` umbenannt (`svg` bleibt Alias). `fileAreas` in `tools/files.ts` liest das aus, mit fester Liste als
+  Rückfall. Die Antwort meldet `"backup":"X.BAK"` auch dann, wenn es keine vorherige Datei gab.
 - `rules.reload` bei Fehler: Code 6 mit Text; mit vorhandener `.BAK` Rollback und Zustand **STOP**, ohne `.BAK`
   Zustand **RULES (−1)** ohne Rollback. Nach einem Fehler bleibt das Gerät auch nach erfolgreichem Reload in STOP.
   `rules.set_root` meldet „erst mit REINIT/Reboot aktiv“, `rules.reload` aktiviert den neuen Root aber sofort.

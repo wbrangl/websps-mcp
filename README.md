@@ -176,7 +176,7 @@ add a second server entry with its own profile.
 | `rules_write` | develop | Write a rules file (validated, backed up, not activated) |
 | `rules_activate` | develop | Make a rules file the running program; replacing the running file needs `expected_root` |
 | `io_label_set` | develop | Set or delete a channel label; returns the `previous_label` for undo |
-| `file_write` | develop | Write visualization pages, SVGs and mail templates |
+| `file_write` | develop | Write visualization pages, scripts/SVGs and mail templates (directories as reported by the device) |
 | `file_delete` | develop | Delete a file (backed up first) |
 | `device_control` | develop | RUN / STOP the program, request an NTP sync |
 | `device_reboot` | develop | REINIT or REBOOT the device |

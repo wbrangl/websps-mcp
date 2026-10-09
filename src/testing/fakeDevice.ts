@@ -44,6 +44,8 @@ export interface FakeDeviceState {
   uploads: Record<string, Buffer>;
   /** Delay before answering rules.reload; the reload itself takes effect immediately. */
   reloadDelayMs: number;
+  /** Extra api.describe fields, e.g. the file endpoint prefixes of newer firmware. */
+  describe: Record<string, unknown>;
 }
 
 const STATUS = {
@@ -120,6 +122,7 @@ export function defaultState(): FakeDeviceState {
     mirror: { "S5.0": "A0.7" },
     uploads: {},
     reloadDelayMs: 0,
+    describe: {},
   };
 }
 
@@ -246,7 +249,8 @@ function upload(state: FakeDeviceState, header: UploadHeader, content: Buffer): 
     };
   }
   const dir = path.split("/")[0] ?? "";
-  if (!["rules", "mails", "svg", "htm"].includes(dir)) return fail(2, "Schreiben nicht erlaubt");
+  if (!["rules", "mails", "svg", "scripts", "htm"].includes(dir))
+    return fail(2, "Schreiben nicht erlaubt");
   const name = path.slice(dir.length + 1);
   if (dir === "rules" && !/^[A-Z0-9_-]{1,8}\.TXT$/.test(name)) return fail(3, "8.3-Format .TXT");
   const old = state.files[path];
@@ -283,7 +287,10 @@ function answer(state: FakeDeviceState, req: IncomingMessage, body: string): Ans
   }
   switch (method) {
     case "api.describe":
-      return { ok: true, result: { device_variant: "ANALOG", firmware_version: "TEST" } };
+      return {
+        ok: true,
+        result: { device_variant: "ANALOG", firmware_version: "TEST", ...state.describe },
+      };
     case "system.status":
       return { ok: true, result: state.status };
     case "system.control": {

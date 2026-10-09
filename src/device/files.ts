@@ -1,7 +1,21 @@
 import { ServerErrorCode, WebspsError } from "../errors.js";
 
-/** Directories of the `/files` endpoint. */
-export const DIRECTORIES = ["rules", "log", "rec", "mails", "svg", "pic", "img", "htm"] as const;
+/**
+ * Directory names the server knows for the `/files` endpoint. Which of them a device actually
+ * offers comes from its `api.describe` (see `fileAreas` in tools/files.ts); `svg` was renamed to
+ * `scripts` in newer firmware and stays valid as an alias.
+ */
+export const DIRECTORIES = [
+  "rules",
+  "log",
+  "rec",
+  "mails",
+  "scripts",
+  "svg",
+  "pic",
+  "img",
+  "htm",
+] as const;
 export type Directory = (typeof DIRECTORIES)[number];
 /** Binary directories have no wire format on the device yet. */
 export const TEXT_DIRECTORIES: readonly Directory[] = [
@@ -9,9 +23,24 @@ export const TEXT_DIRECTORIES: readonly Directory[] = [
   "log",
   "rec",
   "mails",
+  "scripts",
   "svg",
   "htm",
 ];
+/** Older firmware does not report its directories in api.describe. */
+export const LEGACY_READABLE: readonly string[] = [
+  "rules",
+  "log",
+  "rec",
+  "mails",
+  "svg",
+  "pic",
+  "img",
+  "htm",
+];
+export const LEGACY_WRITABLE: readonly string[] = ["rules", "mails", "svg", "htm"];
+/** Old name → new name; the device accepts the old one as an alias. */
+export const DIRECTORY_ALIASES: Readonly<Record<string, string>> = { svg: "scripts" };
 /** Device limit per file for `/files`; larger files cannot be read through the API at all. */
 export const MAX_FILE_BYTES = 32767;
 

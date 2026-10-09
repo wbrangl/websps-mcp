@@ -2,8 +2,11 @@ import { z } from "zod";
 import { encodeText, readVerified, safeWrite } from "../device/fileOps.js";
 import {
   DIRECTORIES,
+  DIRECTORY_ALIASES,
   decodeText,
   isInternalRulesFile,
+  LEGACY_READABLE,
+  LEGACY_WRITABLE,
   MAX_FILE_BYTES,
   parseFilePath,
   TEXT_DIRECTORIES,
@@ -19,6 +22,7 @@ import {
   type ToolDefinition,
   WRITES,
 } from "./common.js";
+import { getDoc } from "./docs.js";
 
 interface RulesList {
   root?: string;
@@ -50,6 +54,7 @@ export const fileList: ToolDefinition = {
             files: (result.files ?? []).filter((f) => !isInternalRulesFile(f.name)),
           };
         }
+        requireArea((await fileAreas(device)).readable, directory, "listed");
         return { device: device.alias, directory, files: await listFiles(device, directory) };
       }),
     );
@@ -75,6 +80,44 @@ async function listFiles(device: Device, directory: string): Promise<string[]> {
   return names;
 }
 
+interface FileAreasDescribe {
+  file_endpoint_prefixes?: string[];
+  file_endpoint_write_prefixes?: string[];
+}
+
+/**
+ * Readable and writable directories as the device reports them in api.describe, so renames on the
+ * firmware side (svg/ → scripts/) need no server change; older firmware without these fields gets
+ * the previously known lists. Old names stay accepted next to their new ones (the device keeps
+ * them as aliases).
+ */
+export async function fileAreas(
+  device: Device,
+): Promise<{ readable: Set<string>; writable: Set<string> }> {
+  const describe = (await getDoc(device, "api").catch(() => undefined)) as
+    | FileAreasDescribe
+    | undefined;
+  const names = (prefixes: string[] | undefined, fallback: readonly string[]) => {
+    const set = new Set(prefixes?.map((p) => p.replace(/\/+$/, "")) ?? fallback);
+    for (const [old, renamed] of Object.entries(DIRECTORY_ALIASES)) {
+      if (set.has(renamed)) set.add(old);
+    }
+    return set;
+  };
+  return {
+    readable: names(describe?.file_endpoint_prefixes, LEGACY_READABLE),
+    writable: names(describe?.file_endpoint_write_prefixes, LEGACY_WRITABLE),
+  };
+}
+
+function requireArea(areas: Set<string>, directory: string, action: string): void {
+  if (!areas.has(directory)) {
+    throw invalidInput(
+      `${directory}/ cannot be ${action} on this device; available: ${[...areas].join(", ")}`,
+    );
+  }
+}
+
 export const fileRead: ToolDefinition = {
   name: "file_read",
   profile: "read",
@@ -93,6 +136,7 @@ export const fileRead: ToolDefinition = {
       handler(async ({ device: alias, path }) => {
         const device = app.devices.resolve(alias);
         const { directory, name } = parseFilePath(path);
+        requireArea((await fileAreas(device)).readable, directory, "read");
         if (!TEXT_DIRECTORIES.includes(directory)) {
           throw invalidInput(`Binary files in ${directory}/ are not supported`);
         }
@@ -113,8 +157,6 @@ export const fileRead: ToolDefinition = {
 };
 
 /** Writable through file_write; rules go through rules_write (validation, activation). */
-const WRITABLE_DIRECTORIES = ["mails", "svg", "htm"] as const;
-
 export const fileWrite: ToolDefinition = {
   name: "file_write",
   profile: "develop",
@@ -124,7 +166,8 @@ export const fileWrite: ToolDefinition = {
       {
         title: "Write file",
         description: [
-          `Write a text file in ${WRITABLE_DIRECTORIES.map((d) => `${d}/`).join(", ")} (visualization pages, SVGs, mail templates; rules files: use rules_write).`,
+          "Write a text file in a writable device directory other than rules/, typically mails/ (mail templates), scripts/ (svg/ on older firmware) and htm/ (visualization pages).",
+          "Rules files: use rules_write; channel labels: io_labels_set.",
           "To change an existing file pass `expected_hash` (the crc16 from file_read); the previous content is kept as a backup on the server.",
         ].join(" "),
         inputSchema: z.object({
@@ -142,13 +185,14 @@ export const fileWrite: ToolDefinition = {
         ({ content, ...rest }) => ({ ...rest, content_bytes: Buffer.byteLength(content) }),
         async (device, { path, content, encoding, expected_hash }) => {
           const { directory, name } = parseFilePath(path);
-          if (!(WRITABLE_DIRECTORIES as readonly string[]).includes(directory)) {
+          if (directory === "rules") {
             throw invalidInput(
-              directory === "rules"
-                ? "Use rules_write for rules files"
-                : `Writing is only possible in ${WRITABLE_DIRECTORIES.join(", ")}`,
+              isInternalRulesFile(name)
+                ? `${name} is managed by the device; use io_labels_set / io_label_set for labels`
+                : "Use rules_write for rules files (it validates them first)",
             );
           }
+          requireArea((await fileAreas(device)).writable, directory, "written");
           const outcome = await safeWrite(
             device,
             `${directory}/${name}`,
@@ -182,6 +226,9 @@ export const fileDelete: ToolDefinition = {
         (args) => ({ ...args }),
         async (device, { path }) => {
           const { directory, name } = parseFilePath(path);
+          if (directory !== "rules") {
+            requireArea((await fileAreas(device)).writable, directory, "deleted");
+          }
           if (directory === "rules" && isInternalRulesFile(name)) {
             throw invalidInput(`${name} is managed by the device and cannot be deleted here`);
           }
