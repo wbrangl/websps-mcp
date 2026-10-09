@@ -46,6 +46,34 @@ export interface FakeDeviceState {
   reloadDelayMs: number;
   /** Extra api.describe fields, e.g. the file endpoint prefixes of newer firmware. */
   describe: Record<string, unknown>;
+  /** Whether a written SYMBOLIK.INI takes effect at once (as on the device) or only later. */
+  labelsFromFile: boolean;
+}
+
+const LABELS_FILE = "rules/SYMBOLIK.INI";
+
+/** SYMBOLIK.INI as the device keeps it: blank line, [LABELS], channel=label lines (CRLF). */
+function labelsFile(labels: Record<string, string>): string {
+  return `\r\n[LABELS]\r\n${Object.entries(labels)
+    .map(([channel, label]) => `${channel}=${label}\r\n`)
+    .join("")}`;
+}
+
+/** The stored label file if one was written without taking effect, else the live labels. */
+function labelsContent(state: FakeDeviceState): string {
+  return state.files[LABELS_FILE] ?? labelsFile(state.labels);
+}
+
+function parseLabelsFile(text: string): Record<string, string> {
+  const labels: Record<string, string> = {};
+  let inSection = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim().startsWith("[")) inSection = line.trim().toUpperCase() === "[LABELS]";
+    else if (inSection && line.includes("=")) {
+      labels[line.slice(0, line.indexOf("=")).trim()] = line.slice(line.indexOf("=") + 1);
+    }
+  }
+  return labels;
 }
 
 const STATUS = {
@@ -106,7 +134,6 @@ export function defaultState(): FakeDeviceState {
     files: {
       "rules/TEST.TXT": "A0.0 = E0.0 && M0.0;\r\nM0.0 = S0.0;\r\n",
       "rules/TEST.BAK": "A0.0 = E0.0;\r\n",
-      "rules/SYMBOLIK.INI": "[SYMBOLIK]\r\nS0.0=Pump on\r\n",
       "mails/HELLO.TXT": "Grüße",
     },
     log: Array.from({ length: 30 }, (_, i) => ({
@@ -123,6 +150,7 @@ export function defaultState(): FakeDeviceState {
     uploads: {},
     reloadDelayMs: 0,
     describe: {},
+    labelsFromFile: true,
   };
 }
 
@@ -200,7 +228,7 @@ function files(state: FakeDeviceState, req: IncomingMessage, body: string): stri
   if (path === "log/LOGFILE.TXT") {
     return { ok: false, error: { code: 6, message: "Datei zu gross (max 32767 Bytes)" } };
   }
-  const content = state.files[path];
+  const content = path === LABELS_FILE ? labelsContent(state) : state.files[path];
   if (content === undefined)
     return { ok: false, error: { code: 4, message: "Datei nicht gefunden" } };
   if (action === "hash") {
@@ -252,15 +280,22 @@ function upload(state: FakeDeviceState, header: UploadHeader, content: Buffer): 
   if (!["rules", "mails", "svg", "scripts", "htm"].includes(dir))
     return fail(2, "Schreiben nicht erlaubt");
   const name = path.slice(dir.length + 1);
-  if (dir === "rules" && !/^[A-Z0-9_-]{1,8}\.TXT$/.test(name)) return fail(3, "8.3-Format .TXT");
-  const old = state.files[path];
+  // The label file is the one non-.TXT file the device accepts under rules/.
+  if (dir === "rules" && path !== LABELS_FILE && !/^[A-Z0-9_-]{1,8}\.TXT$/.test(name))
+    return fail(3, "8.3-Format .TXT");
+  const old = path === LABELS_FILE ? labelsContent(state) : state.files[path];
   if (old !== undefined && header.expected_hash !== undefined) {
     if (crc16Xmodem(Buffer.from(old)) !== header.expected_hash)
       return fail(6, "expected_hash stimmt nicht");
   }
   const bak = path.replace(/\.[^.]+$/, ".BAK");
   if (old !== undefined) state.files[bak] = old;
-  state.files[path] = text;
+  if (path === LABELS_FILE && state.labelsFromFile) {
+    state.labels = parseLabelsFile(text);
+  } else {
+    // Without labelsFromFile the file is stored, but the labels in memory stay as they were.
+    state.files[path] = text;
+  }
   return {
     ok: true,
     result: {
@@ -404,7 +439,7 @@ function answer(state: FakeDeviceState, req: IncomingMessage, body: string): Ans
         ok: true,
         result: {
           root: "TEST.TXT",
-          files: Object.entries(state.files)
+          files: Object.entries({ ...state.files, [LABELS_FILE]: labelsContent(state) })
             .filter(([path]) => path.startsWith("rules/"))
             .map(([path, content]) => ({
               name: path.slice("rules/".length),

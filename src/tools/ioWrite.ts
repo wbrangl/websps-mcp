@@ -1,6 +1,10 @@
 import { z } from "zod";
-import { MAX_BATCH, MAX_CHANNEL_BYTES, readChannelValues } from "../device/channels.js";
+import { MAX_BATCH, readChannelValues } from "../device/channels.js";
+import { encodeText, readVerified, safeWrite } from "../device/fileOps.js";
+import { decodeText } from "../device/files.js";
+import { applyLabelChanges, checkLabel, LABELS_PATH, labelChannel } from "../device/labelsFile.js";
 import type { Device } from "../device/registry.js";
+import { DeviceErrorCode, WebspsError } from "../errors.js";
 import {
   auditedHandler,
   DESTRUCTIVE,
@@ -13,10 +17,6 @@ import {
 const DIGITAL = /^[SMVU]\d{1,2}\.[0-7]$/;
 const ANALOG = /^(AA|SW)\d{1,2}$/;
 const MAX_VERIFY_DELAY_MS = 10_000;
-/** INI structure characters would corrupt the label file on the device. */
-const LABEL_FORBIDDEN = /[[\]=;\r\n]/;
-// Verified on the device; longer labels are untested.
-const MAX_LABEL_BYTES = 100;
 
 const valueSchema = z.union([z.number(), z.boolean()]);
 
@@ -203,20 +203,8 @@ export const ioLabelSet: ToolDefinition = {
         "io_label_set",
         (args) => ({ ...args }),
         async (device, { channel, label }) => {
-          const name = channel.trim();
-          if (
-            name === "" ||
-            Buffer.byteLength(name) > MAX_CHANNEL_BYTES ||
-            LABEL_FORBIDDEN.test(name)
-          ) {
-            throw invalidInput(`Invalid channel "${channel}"`);
-          }
-          if (LABEL_FORBIDDEN.test(label)) {
-            throw invalidInput("Label must not contain [ ] = ; or line breaks");
-          }
-          if (Buffer.byteLength(label) > MAX_LABEL_BYTES) {
-            throw invalidInput(`Label is longer than ${MAX_LABEL_BYTES} bytes`);
-          }
+          const name = labelChannel(channel);
+          checkLabel(name, label);
           // Read fresh from the device, not from the label cache, so the previous value is
           // current. Reading and setting are not atomic on the device; a change in between by
           // someone else would go unnoticed (very short window).
@@ -249,6 +237,99 @@ export const ioLabelSet: ToolDefinition = {
           previous_label,
           changed,
         }),
+      ),
+    );
+  },
+};
+
+/** More labels per call than any device has channels; keeps a single call bounded. */
+const MAX_LABELS_PER_CALL = 1000;
+
+export const ioLabelsSet: ToolDefinition = {
+  name: "io_labels_set",
+  profile: "develop",
+  register(server, app) {
+    server.registerTool(
+      "io_labels_set",
+      {
+        title: "Set many channel labels",
+        description: [
+          "Set, change or delete many channel labels at once (one write of the device's label file instead of one call per channel).",
+          "`labels` lists {channel, label} pairs; an empty label deletes that label. Other labels stay unchanged,",
+          "unless `replace_all: true`, which removes every label not listed. The result lists each change with its",
+          "`previous_label` (null if there was none) so it can be undone; `applied` tells whether the device reports the new labels.",
+        ].join(" "),
+        inputSchema: z.object({
+          device: deviceParam(app),
+          labels: z
+            .array(z.object({ channel: z.string().min(1), label: z.string() }))
+            .min(1)
+            .max(MAX_LABELS_PER_CALL),
+          replace_all: z.boolean().optional(),
+        }),
+        annotations: DESTRUCTIVE,
+      },
+      auditedHandler(
+        app,
+        "io_labels_set",
+        ({ labels, ...rest }) => ({ ...rest, labels: labels.length }),
+        async (device, { labels, replace_all }) => {
+          const wanted = new Map<string, string>();
+          for (const entry of labels) {
+            const channel = labelChannel(entry.channel);
+            checkLabel(channel, entry.label);
+            if (wanted.has(channel)) throw invalidInput(`Channel ${channel} is listed twice`);
+            wanted.set(channel, entry.label);
+          }
+
+          // Read the file fresh with its CRC; the write below passes that CRC as expected_hash,
+          // so a change by someone else in between makes the device refuse the write.
+          const existing = await readVerified(device, LABELS_PATH).catch((error: unknown) => {
+            if (error instanceof WebspsError && error.code === DeviceErrorCode.NOT_FOUND) {
+              return undefined;
+            }
+            throw error;
+          });
+          const { text, encoding } =
+            existing === undefined
+              ? { text: "", encoding: "utf-8" as const }
+              : decodeText(existing.bytes);
+          const updated = applyLabelChanges(text, wanted, replace_all === true);
+          const unchanged =
+            labels.length - updated.changes.filter((c) => wanted.has(c.channel)).length;
+          if (updated.changes.length === 0) {
+            return { device: device.alias, changes: [], unchanged, written: false };
+          }
+
+          let outcome: Awaited<ReturnType<typeof safeWrite>>;
+          try {
+            outcome = await safeWrite(
+              device,
+              LABELS_PATH,
+              encodeText(updated.content, encoding),
+              existing?.crc16,
+            );
+          } finally {
+            device.labels.invalidate();
+          }
+
+          // The device must serve the new labels; report it if it does not (yet).
+          const now = await device.client.call<{ labels?: Record<string, string> }>("io.labels");
+          const applied = updated.changes.every((c) => (now.labels?.[c.channel] ?? "") === c.label);
+          return {
+            device: device.alias,
+            changes: updated.changes,
+            unchanged,
+            written: true,
+            applied,
+            ...(!applied && {
+              hint: "The file was written but the device does not report all new labels yet; check io_labels, a device_reboot REINIT reloads them.",
+            }),
+            backup: outcome.backup,
+            crc16: outcome.crc16,
+          };
+        },
+        ({ changes, written, applied, backup }) => ({ changes, written, applied, backup }),
       ),
     );
   },

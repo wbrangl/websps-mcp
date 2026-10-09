@@ -63,7 +63,7 @@ auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
 
 ## Architektur
 
-Umgesetzt: alle 23 Tools (Profile read 11 · operate 13 · develop 21 · admin 23), `STATE_DIR` mit Audit-Log und
+Umgesetzt: alle 24 Tools (Profile read 11 · operate 13 · develop 22 · admin 24), `STATE_DIR` mit Audit-Log und
 Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Noch offen: Remote-HTTP-Adapter,
 Veröffentlichung (npm, Image-Registry, GitHub).
 
@@ -188,8 +188,8 @@ Veröffentlichung (npm, Image-Registry, GitHub).
   `io.read`/`io.write`-Batches und `config.get_multi`; Kanalnamen ≤15 Byte. Längen in **Byte** zählen (UTF-8 wird
   unverändert durchgereicht; beim Chunking keine Mehrbyte-Sequenzen zerschneiden). Rules-Dateien mit CRLF erzeugen.
 - `rules.reload` blockiert bis ~4s — für Reload-artige Methoden Timeout ≥10s.
-- `rules.list` ist ungefiltert: `.BAK`-Dateien und `SYMBOLIK.INI` aus Listen ausblenden, Schreiben/Löschen darauf
-  verweigern. 8.3-Dateinamen vor dem Senden prüfen.
+- `rules.list` ist ungefiltert: `.BAK`-Dateien und `SYMBOLIK.INI` aus Listen ausblenden, rohes Schreiben/Löschen
+  darauf verweigern (`SYMBOLIK.INI` nur strukturiert über `io_labels_set`). 8.3-Dateinamen vor dem Senden prüfen.
 - Bei `system.control` nur die Befehlsnamen verwenden, nie die Ziffern-Aliase.
 - **Upload-Format** `/files`: `<JSON-Header>\n---CONTENT---\n<Rohbytes>`; Header `{path, action?, chunk?, chunks?,
   expected_hash?}`. `expected_hash` prüft das Gerät **nur beim letzten Chunk** (deshalb bei jedem mitsenden).
@@ -220,6 +220,11 @@ Veröffentlichung (npm, Image-Registry, GitHub).
 - `io_write` erlaubt nur `S`/`M`/`V`/`U`/`AA`/`SW`.
 - `io_label_set` liest das bisherige Label **frisch** vom Gerät (nicht aus dem Cache), liefert `previous_label`
   (`null`, wenn keins) und `changed`; bei unverändertem Wert wird nichts gesendet.
+- `io_labels_set` (viele Labels) schreibt `rules/SYMBOLIK.INI` in einem Rutsch: Datei frisch lesen (CRC),
+  `applyLabelChanges` in `src/device/labelsFile.ts` ändert nur `Kanal=Label`-Zeilen im Abschnitt `[LABELS]` und lässt
+  alles andere stehen, Prüfung jedes Eintrags wie bei `io_label_set` (Kanal ≤15 Byte ohne `[]=`, Label ≤100 Byte
+  ohne `[]=;`), dann `safeWrite` mit diesem CRC als `expected_hash` und danach `io.labels` gegenlesen (`applied`).
+  Roh schreiben lässt sich `SYMBOLIK.INI` über `file_write` weiterhin **nicht**.
 - Tool-Ergebnisse: vollständiges Ergebnis als kompaktes JSON im Text-`content` plus `structuredContent`;
   Annotationen (`readOnlyHint`/`destructiveHint`) sind nur Hinweise. `tools/list` deterministisch sortieren.
   Diagnose über `stderr` (stdout gehört bei stdio dem Protokoll).

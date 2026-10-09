@@ -31,8 +31,8 @@ const crc = (text: string) => crc16Xmodem(Buffer.from(text));
 describe.each([
   ["read", 11],
   ["operate", 13],
-  ["develop", 21],
-  ["admin", 23],
+  ["develop", 22],
+  ["admin", 24],
 ])("profile %s", (profile, count) => {
   it(`shows ${count} tools`, async () => {
     const c = await connectServer({ url: device.url, stateDir, env: { WEBSPS_PROFILE: profile } });
@@ -390,5 +390,107 @@ describe("io_label_set previous_label", () => {
     const activations = entries.filter((e) => e.tool === "rules_activate" && e.outcome === "ok");
     expect(activations.at(-1)?.result).toMatchObject({ root: expect.any(String) });
     expect(activations.at(-1)?.result).toHaveProperty("previous_root");
+  });
+});
+
+describe("io_labels_set", () => {
+  const writesOfLabelFile = (before: number) =>
+    device.state.calls.slice(before).filter((c) => c === "/files write rules/SYMBOLIK.INI");
+
+  it("changes many labels in one write and reports previous values", async () => {
+    device.state.labels = { "S0.0": "Pump on", "H0.0": "Pump status" };
+    const before = device.state.calls.length;
+    const result = await call("io_labels_set", {
+      labels: [
+        { channel: "S0.0", label: "Pump switch" },
+        { channel: "H0.0", label: "Pump status" },
+        { channel: "M9.0", label: "New marker" },
+      ],
+    });
+    expect(result.body).toMatchObject({ written: true, applied: true, unchanged: 1 });
+    expect(result.body.changes).toEqual([
+      { channel: "S0.0", label: "Pump switch", previous_label: "Pump on" },
+      { channel: "M9.0", label: "New marker", previous_label: null },
+    ]);
+    expect(writesOfLabelFile(before)).toHaveLength(1);
+    expect(device.state.labels).toEqual({
+      "S0.0": "Pump switch",
+      "H0.0": "Pump status",
+      "M9.0": "New marker",
+    });
+    expect((await call("io_labels", {})).body.labels["M9.0"]).toBe("New marker");
+  });
+
+  it("deletes labels, keeps the rest, and writes nothing without changes", async () => {
+    const deleted = await call("io_labels_set", { labels: [{ channel: "M9.0", label: "" }] });
+    expect(deleted.body.changes).toEqual([
+      { channel: "M9.0", label: "", previous_label: "New marker" },
+    ]);
+    expect(Object.keys(device.state.labels).sort()).toEqual(["H0.0", "S0.0"]);
+
+    const before = device.state.calls.length;
+    const same = await call("io_labels_set", {
+      labels: [{ channel: "S0.0", label: "Pump switch" }],
+    });
+    expect(same.body).toMatchObject({ written: false, changes: [], unchanged: 1 });
+    expect(writesOfLabelFile(before)).toHaveLength(0);
+  });
+
+  it("replaces all labels with replace_all", async () => {
+    const result = await call("io_labels_set", {
+      labels: [{ channel: "A0.0", label: "Light" }],
+      replace_all: true,
+    });
+    expect(result.body.changes).toEqual([
+      { channel: "S0.0", label: "", previous_label: "Pump switch" },
+      { channel: "H0.0", label: "", previous_label: "Pump status" },
+      { channel: "A0.0", label: "Light", previous_label: null },
+    ]);
+    expect(device.state.labels).toEqual({ "A0.0": "Light" });
+  });
+
+  it("validates every entry before writing anything", async () => {
+    const before = device.state.calls.length;
+    const bad = await call("io_labels_set", {
+      labels: [
+        { channel: "S0.0", label: "ok" },
+        { channel: "S0.1", label: "a=b" },
+      ],
+    });
+    expect(bad.body.error).toMatchObject({ code: 1007 });
+    expect(bad.body.error.message).toContain("S0.1");
+    const twice = await call("io_labels_set", {
+      labels: [
+        { channel: "S0.0", label: "a" },
+        { channel: "S0.0", label: "b" },
+      ],
+    });
+    expect(twice.body.error.message).toContain("listed twice");
+    expect(writesOfLabelFile(before)).toHaveLength(0);
+  });
+
+  it("reports when the device does not take over the written labels", async () => {
+    device.state.labelsFromFile = false;
+    try {
+      const result = await call("io_labels_set", { labels: [{ channel: "A0.1", label: "Fan" }] });
+      expect(result.body).toMatchObject({ written: true, applied: false });
+      expect(result.body.hint).toContain("REINIT");
+    } finally {
+      device.state.labelsFromFile = true;
+      delete device.state.files["rules/SYMBOLIK.INI"];
+      device.state.labels = { "S0.0": "Pump on" };
+    }
+  });
+
+  it("keeps the changes and the backup in the audit log", async () => {
+    const lines = (await readFile(join(stateDir, "websps", "audit.jsonl"), "utf8"))
+      .trim()
+      .split("\n");
+    const done = lines
+      .map((l) => JSON.parse(l))
+      .filter((e) => e.tool === "io_labels_set" && e.outcome === "ok" && e.result.written);
+    expect(done[0].args).toEqual({ labels: 3 });
+    expect(done[0].result.changes).toHaveLength(2);
+    expect(done[0].result.backup).toMatch(/_rules_SYMBOLIK\.INI$/);
   });
 });

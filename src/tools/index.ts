@@ -6,7 +6,7 @@ import { deviceStatus, devicesList } from "./devices.js";
 import { docsGet } from "./docs.js";
 import { fileDelete, fileList, fileRead, fileWrite } from "./files.js";
 import { ioLabels, ioRead, ioUsage } from "./io.js";
-import { ioLabelSet, ioWrite, recordingClear } from "./ioWrite.js";
+import { ioLabelSet, ioLabelsSet, ioWrite, recordingClear } from "./ioWrite.js";
 import { logRead } from "./logs.js";
 import { rulesActivate, rulesValidate, rulesWrite } from "./rules.js";
 import { sample } from "./sample.js";
@@ -33,6 +33,7 @@ const TOOLS: readonly ToolDefinition[] = [
   rulesWrite,
   rulesActivate,
   ioLabelSet,
+  ioLabelsSet,
   fileWrite,
   fileDelete,
   deviceControl,

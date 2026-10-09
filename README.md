@@ -176,6 +176,7 @@ add a second server entry with its own profile.
 | `rules_write` | develop | Write a rules file (validated, backed up, not activated) |
 | `rules_activate` | develop | Make a rules file the running program; replacing the running file needs `expected_root` |
 | `io_label_set` | develop | Set or delete a channel label; returns the `previous_label` for undo |
+| `io_labels_set` | develop | Set, change or delete many labels in one write of the device's label file; previous values per change |
 | `file_write` | develop | Write visualization pages, scripts/SVGs and mail templates (directories as reported by the device) |
 | `file_delete` | develop | Delete a file (backed up first) |
 | `device_control` | develop | RUN / STOP the program, request an NTP sync |
@@ -183,7 +184,7 @@ add a second server entry with its own profile.
 | `config_set` | admin | Change a configuration field (never passwords) |
 | `device_maintenance` | admin | Set the device clock, delete the log file |
 
-Visible tools: `read` 11 · `operate` 13 · `develop` 21 · `admin` 23.
+Visible tools: `read` 11 · `operate` 13 · `develop` 22 · `admin` 24.
 
 Client approval prompts ("allow this tool?") are a convenience, not a protection: users can allow a
 tool permanently. What actually limits an agent is the profile and the device user's permissions.
