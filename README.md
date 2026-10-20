@@ -14,8 +14,9 @@ programs — with safeguards built for a single-threaded industrial controller.
 It works with any MCP client and supports both the current protocol revision (2026-07-28) and older
 clients that use the `initialize` handshake.
 
-> **Status:** pre-release. The package is not published yet; until then, run it from source (see
-> [Running from source](#running-from-source)).
+> **Status:** first release `v0.1.0`. Neither the npm package nor a container image is published
+> yet: build the [Docker](#docker) image from the release tag, or [run from source](#running-from-source).
+> The `npx` examples below apply once the package is on npm.
 
 ## Contents
 
@@ -30,6 +31,8 @@ clients that use the `initialize` handshake.
 - [State directory](#state-directory)
 - [Errors](#errors)
 - [Docker](#docker)
+  - [Building the image](#building-the-image)
+  - [Running the container](#running-the-container)
   - [Optional: password in a file](#optional-password-in-a-file-shared-hosts-orchestrators)
 - [Running from source](#running-from-source)
 - [License](#license)
@@ -335,12 +338,40 @@ Check the client's tool settings; `tools/list` of the server always returns all 
 
 ## Docker
 
-The image runs the same stdio server; the MCP client starts a container per session. Until images
-are published, build it yourself:
+The image runs the same stdio server; the MCP client starts a container per session.
+
+### Building the image
+
+No image is published yet, so build it from a release tag (`v0.1.0` = image tag `0.1.0`):
 
 ```sh
-docker build -t websps-mcp:0.1.0 .
+git clone --branch v0.1.0 https://github.com/wbrangl/websps-mcp.git websps-mcp
+cd websps-mcp
+docker build \
+  --build-arg VERSION=0.1.0 \
+  --build-arg REVISION=$(git rev-parse HEAD) \
+  --build-arg SOURCE=https://github.com/wbrangl/websps-mcp \
+  -t websps-mcp:0.1.0 .
 ```
+
+The build arguments only add labels to the image (version, commit, source); a plain
+`docker build -t websps-mcp:0.1.0 .` works too, but then the labels read `dev`/`unknown`. Check
+with:
+
+```sh
+docker image inspect websps-mcp:0.1.0 --format '{{json .Config.Labels}}'
+```
+
+- Name an image after a version only when it is built from that release tag. A build from `main`
+  is a development state: tag it e.g. `websps-mcp:dev`.
+- Always put a fixed version into the client configuration, never `:latest`.
+- **Updating:** check out the new tag (`git fetch --tags && git checkout v<version>`), build it
+  under its own tag, then change the tag in the client configuration. The old image stays
+  available for going back, and the state volume (`websps-state`) is kept.
+- The base image is pinned by digest and the dependencies by `package-lock.json`, so a rebuild of
+  the same tag contains the same software.
+
+### Running the container
 
 Recommended client configuration (`-i` keeps stdin open for the protocol; do not add `-t`):
 
@@ -450,7 +481,7 @@ With rootful Docker, `chown 1000 /etc/websps/websps.pw` and `chmod 400` on the h
 ## Running from source
 
 ```sh
-git clone https://github.com/wbrangl/websps-mcp.git websps-mcp
+git clone --branch v0.1.0 https://github.com/wbrangl/websps-mcp.git websps-mcp
 cd websps-mcp
 npm ci
 npm run build
