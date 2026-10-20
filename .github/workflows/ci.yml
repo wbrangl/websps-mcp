@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build image
+        run: >
+          docker build
+          --build-arg VERSION=$(node -p "require('./package.json').version")
+          --build-arg REVISION=${{ github.sha }}
+          --build-arg SOURCE=${{ github.server_url }}/${{ github.repository }}
+          -t websps-mcp:ci .
+      - name: Handshake
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            | docker run -i --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+                -e WEBSPS_URL=http://192.168.2.102 -e WEBSPS_USER=ci -e WEBSPS_PASSWORD=ci websps-mcp:ci \
+            | grep '"serverInfo"'
