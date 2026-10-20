@@ -1,4 +1,9 @@
-<p><img src="docs/websps-wordmark.svg" alt="Web@SPS" height="56"></p>
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/websps-wordmark-dark.svg">
+    <img src="docs/websps-wordmark-light.svg" alt="Web@SPS" height="56">
+  </picture>
+</p>
 
 # websps-mcp
 

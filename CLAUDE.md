@@ -32,7 +32,8 @@ Gerätemasken oder Fehlercodes mitziehen.
 Dieses Repo wird unter MIT-Lizenz veröffentlicht: Keine Zugangsdaten, Kundennamen, internen IPs oder Inhalte aus
 nicht öffentlichen Unterlagen in committete Dateien, Commits oder Testdaten übernehmen. Beispieladressen: die
 Werksadresse `192.168.2.102` aus dem Handbuch (weitere Geräte `.103` usw.). Schreibweise immer `Web@SPS`; als
-Schriftzug wie in der Geräte-Web-UI (weißes „Web@“, rotes kursives „SPS“, `docs/websps-wordmark.svg`).
+Schriftzug wie in der Geräte-Web-UI (rotes kursives „SPS“; „Web@“ weiß auf dunklem bzw. `#1f2328` auf hellem
+Hintergrund; transparent, per `<picture>` je GitHub-Theme: `docs/websps-wordmark-dark.svg` / `-light.svg`).
 
 ## Release
 
