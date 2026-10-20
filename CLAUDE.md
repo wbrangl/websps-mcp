@@ -21,6 +21,9 @@ Firmware-Inhalte ins Repo kopieren). `src/e2e.test.ts` startet den Server per `t
 Client-SDK in **beiden** Protokoll-Eras (`{ pin: "2026-07-28" }` und `legacy`). Manueller Test: JSON-RPC-Zeilen per
 Pipe an `node dist/index.js` schicken (stdout = Protokoll, Logs nach stderr).
 
+CI (`.github/workflows/ci.yml`, GitHub `wbrangl/websps-mcp`): bei Push auf `main` und bei Pull Requests
+typecheck, lint, Tests, Build sowie Docker-Image mit gehärtetem Handshake-Test.
+
 Private Hinweise (Designunterlagen, Testgerät) stehen in `CLAUDE.local.md`.
 
 `README.md` ist die öffentliche Kundendoku (Englisch): bei Änderungen an Tools, Profilen, Konfiguration,
