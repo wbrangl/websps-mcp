@@ -78,6 +78,9 @@ claude mcp add websps \
   -- npx -y websps-mcp@0.1.0
 ```
 
+Until the package is on npm, use the Docker image instead — see
+[Running the container](#running-the-container) for the same command with Docker.
+
 Then ask the agent something like *"What is the status of the device?"* or *"Which outputs are on?"*.
 
 ## Configuration
@@ -373,7 +376,23 @@ docker image inspect websps-mcp:0.1.0 --format '{{json .Config.Labels}}'
 
 ### Running the container
 
-Recommended client configuration (`-i` keeps stdin open for the protocol; do not add `-t`):
+With Claude Code (tested with Claude Code 2.1):
+
+```sh
+claude mcp add websps \
+  -e WEBSPS_URL=http://192.168.2.102 -e WEBSPS_USER=api_user \
+  -e WEBSPS_PASSWORD=change-me -e WEBSPS_PROFILE=read \
+  -- docker run -i --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+     --pids-limit 64 --memory 256m \
+     -e WEBSPS_URL -e WEBSPS_USER -e WEBSPS_PASSWORD -e WEBSPS_PROFILE \
+     -v websps-state:/state websps-mcp:0.1.0
+```
+
+`claude mcp list` should then show `websps … ✔ Connected`. The `-e` options before `--` set the
+values for Claude Code; the `-e NAME` options after it pass them into the container. With
+`--scope project` (shared `.mcp.json`), Claude Code asks once for approval before it connects.
+
+For other clients, the same as configuration (`-i` keeps stdin open for the protocol; do not add `-t`):
 
 ```json
 {
