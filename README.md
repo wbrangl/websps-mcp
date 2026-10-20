@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/websps-wordmark-dark.svg">
-    <img src="docs/websps-wordmark-light.svg" alt="Web@SPS" height="56">
+    <img src="docs/websps-wordmark-light.svg" alt="Web@SPS" height="112">
   </picture>
 </p>
 
