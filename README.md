@@ -445,7 +445,7 @@ With rootful Docker, `chown 1000 /etc/websps/websps.pw` and `chmod 400` on the h
 ## Running from source
 
 ```sh
-git clone <repository-url> websps-mcp
+git clone https://github.com/wbrangl/websps-mcp.git websps-mcp
 cd websps-mcp
 npm ci
 npm run build

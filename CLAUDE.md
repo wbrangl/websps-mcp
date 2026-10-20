@@ -39,7 +39,7 @@ Einzige Versionsquelle ist `package.json` (der Server meldet sie auch im Handsha
 2. `npm run typecheck && npm run lint && npm test`, committen.
 3. Git-Tag `v<x.y.z>` setzen.
 4. Image: `docker build --build-arg VERSION=<x.y.z> --build-arg REVISION=$(git rev-parse HEAD)
-   --build-arg SOURCE=<repo-url> -t websps-mcp:<x.y.z> .` (setzt die OCI-Labels; prüfen mit
+   --build-arg SOURCE=https://github.com/wbrangl/websps-mcp -t websps-mcp:<x.y.z> .` (setzt die OCI-Labels; prüfen mit
    `docker image inspect`). Basis-Image ist per Digest gepinnt (`NODE_IMAGE` im `Dockerfile`) — pro Release bewusst
    aktualisieren.
 5. Dokumentierte Konfigurationen nennen immer eine feste Version, nie `:latest`.

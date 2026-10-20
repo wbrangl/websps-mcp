@@ -4,6 +4,21 @@
   "description": "MCP server for Web@SPS PLC devices",
   "license": "MIT",
   "author": "Wolfgang Brangl",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wbrangl/websps-mcp.git"
+  },
+  "homepage": "https://github.com/wbrangl/websps-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/wbrangl/websps-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "web@sps",
+    "plc",
+    "sps"
+  ],
   "type": "module",
   "bin": {
     "websps-mcp": "dist/index.js"
