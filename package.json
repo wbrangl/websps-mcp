@@ -1,6 +1,6 @@
 {
   "name": "websps-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for Web@SPS PLC devices",
   "license": "MIT",
   "author": "Wolfgang Brangl",
