@@ -1,0 +1,71 @@
+name: Release image
+
+# Builds the container image for a release tag and pushes it to the GitHub Container Registry as
+# ghcr.io/<owner>/websps-mcp:<version> (no :latest — configurations always name a fixed version).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build, e.g. v0.1.1"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag and version
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          case "$tag" in v[0-9]*) ;; *) echo "not a release tag: $tag" >&2; exit 1 ;; esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/websps-mcp" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ steps.version.outputs.tag }}
+
+      - name: Tag matches package.json
+        id: commit
+        run: |
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          pkg=$(node -p "require('./package.json').version")
+          test "$pkg" = "${{ steps.version.outputs.version }}" || {
+            echo "package.json has $pkg, tag is ${{ steps.version.outputs.tag }}" >&2; exit 1; }
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.version.outputs.image }}:${{ steps.version.outputs.version }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            REVISION=${{ steps.commit.outputs.revision }}
+            SOURCE=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Handshake with the pushed image
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            | docker run -i --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+                -e WEBSPS_URL=http://192.168.2.102 -e WEBSPS_USER=ci -e WEBSPS_PASSWORD=ci \
+                ${{ steps.version.outputs.image }}:${{ steps.version.outputs.version }} \
+            | grep '"version":"${{ steps.version.outputs.version }}"'
