@@ -164,13 +164,14 @@ Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Ve
 
 ## Fallstricke der Geräte-API
 
-- Der JSON-Parser der Firmware ist kein vollständiger: Leerzeichen **vor** einem `:` (`"method" :`) lassen
-  Methode bzw. Parameter verschwinden (Fehler 3); auf älterer Firmware auch Leerzeichen zwischen `:` und einem
-  Array (`"channels": [`, seit V5.0.0-Fix ok, ebenso eingerücktes JSON). Der Server sendet JSON immer kompakt
-  (`JSON.stringify`), Testskripte sollten das auch (Python: `separators=(",", ":")`).
+- Der JSON-Parser der Firmware ist kein vollständiger: bis V5.0.0 lassen Leerzeichen **vor** einem `:`
+  (`"method" :`) Methode bzw. Parameter verschwinden (Fehler 3), auf noch älterer Firmware auch Leerzeichen
+  zwischen `:` und einem Array (`"channels": [`); ab V5.0.1 geht beides, ebenso eingerücktes JSON. Der Server
+  sendet JSON immer kompakt (`JSON.stringify`), Testskripte sollten das auch (Python: `separators=(",", ":")`).
 - HTTP-Status ist **immer 200**; `ok` / `error.code` im Body prüfen. Gerätefehler als MCP-`isError` mit
   `{code, name, hint}` abbilden. Falsches Passwort und fehlende Auth liefern beide Code 1.
-- **Firmware-Stände unterscheiden sich, `firmware_version` aber nicht** (`V5.0B Analog`). Neuere Firmware meldet
+- **Firmware-Stände unterscheiden sich, ältere melden aber alle dieselbe `firmware_version`** (`V5.0B Analog`;
+  neuere zählen hoch: `V5.0.0`, `V5.0.1`, …). Neuere Firmware meldet
   Fähigkeiten in `api.describe.api_features` (z.B. `io_read_ct_value_alias`, `io_read_analog_channels`,
   `files_list_name_aliases`, `config_schema_section`). Der Server muss auf beiden Ständen funktionieren; bisher
   kommt er ohne Feature-Abfragen aus (Rückfälle greifen nur bei Fehlern).
@@ -221,9 +222,13 @@ Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Ve
   `rules.delete` der aktiven Root-Datei → Code 2 (der Server prüft das vorher selbst).
 - `io.write`: Batch `{"writes":[{channel,value}]}` mit Ergebnis pro Eintrag; ältere Firmware wandelt Analogwerte
   **ungeprüft** um (`"abc"` → 0, Erfolg!), neuere lehnt alles außer Dezimalschreibweise ab („Wert ist keine
-  Zahl“, auch `"1e2"` und `" 2"`); Werte über ~20 Zeichen ergeben „'channel'/'value' fehlt“. Werte prüft und
+  Zahl“, auch `"1e2"` und `" 2"`). Bis V5.0.0 ergeben Werte über ~20 Zeichen „'channel'/'value' fehlt“ (Batch-Element
+  auf 48 Byte abgeschnitten), ab V5.0.1 Wertpuffer 32 Byte und sonst „Batch-Element zu lang (abgeschnitten)“. Werte prüft und
   formatiert `writeValue` in `tools/ioWrite.ts` (nie Exponentschreibweise). Bereich 0–100 bei `AA`/`SW` prüft das
   Gerät. Labels bis 100 Byte verifiziert.
+- `system.status` zeigt nach jedem erfolgreichen `io.write` ~2 s lang `DATA` (Code 2; ebenso bei TCP/MAIL), danach
+  von selbst wieder `RUN` — kein Fehlerzustand, die Rules laufen weiter. `RMLOG` (Code 4) erscheint ebenso kurz;
+  danach schreibt das Gerät die gepufferten Konsolenzeilen gleich wieder in die neue Logdatei.
 - `files.delete` erwartet `{directory, filename}` (nicht `path`); auf älterer Firmware scheitert es wie
   `files.list` an der Verzeichnisprüfung.
 

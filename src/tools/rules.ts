@@ -243,12 +243,13 @@ export const rulesActivate: ToolDefinition = {
               }
             }
             const after = await status(device).catch(() => undefined);
+            // DATA is shown for ~2 s after any I/O write while the rules keep running.
+            const rulesRunning = after?.status_text === "RUN" || after?.status_text === "DATA";
             throw new WebspsError(error.code, `Activating ${target} failed: ${error.message}`, {
               device: device.alias,
-              hint:
-                after?.status_text === "RUN"
-                  ? "The device runs the previous rules again. Fix the file and try again."
-                  : "The device is not running (see details.status). After checking, device_control RUN resumes it.",
+              hint: rulesRunning
+                ? "The device runs the previous rules again. Fix the file and try again."
+                : "The device is not running (see details.status). After checking, device_control RUN resumes it.",
               details: {
                 target,
                 ...(restored !== undefined && { restored_previous_root: restored }),
