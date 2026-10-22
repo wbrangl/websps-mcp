@@ -89,6 +89,10 @@ same command with Docker.
 
 Then ask the agent something like *"What is the status of the device?"* or *"Which outputs are on?"*.
 
+**Tested clients:** Claude Code (both protocol revisions) and [Ontheia](https://ontheia.ai), an agent
+platform from the same author, where the server runs in production. Any other MCP client that
+supports stdio servers works the same way.
+
 ## Configuration
 
 ### Several devices: configuration file
