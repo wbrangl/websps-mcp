@@ -43,12 +43,15 @@ Einzige Versionsquelle ist `package.json` (der Server meldet sie auch im Handsha
 2. `npm run typecheck && npm run lint && npm test`, committen.
 3. Git-Tag `v<x.y.z>` setzen und pushen. Der Workflow `.github/workflows/release.yml` baut daraufhin das Image für
    `linux/amd64` und `linux/arm64` mit OCI-Labels, pusht es als `ghcr.io/wbrangl/websps-mcp:<x.y.z>` (ohne
-   `:latest`) und prüft den Handshake. Für einen schon vorhandenen Tag: `gh workflow run release.yml -f tag=v<x.y.z>`.
-   Bricht ab, wenn Tag und `package.json`-Version nicht übereinstimmen.
-4. npm: `npm publish --access public` in einem **normalen Terminal** (2FA per Passkey braucht ein interaktives
-   Terminal; über `!` in Claude Code bricht npm mit `EOTP` ab). `npm login` läuft nach kurzer Zeit ab. Danach
-   GitHub-Release zum Tag anlegen (`gh release create v<x.y.z> --latest`). Basis-Image ist per Digest gepinnt
+   `:latest`) und prüft den Handshake; danach veröffentlicht der Job `npm` das Paket per **Trusted Publishing**
+   (OIDC, kein Token, Provenance automatisch; auf npmjs.com als Trusted Publisher hinterlegt: GitHub Actions,
+   `wbrangl/websps-mcp`, Workflow `release.yml`). Eine schon veröffentlichte Version überspringt er. Für einen
+   schon vorhandenen Tag: `gh workflow run release.yml -f tag=v<x.y.z>`. Bricht ab, wenn Tag und
+   `package.json`-Version nicht übereinstimmen.
+4. GitHub-Release zum Tag anlegen (`gh release create v<x.y.z> --latest`). Basis-Image ist per Digest gepinnt
    (beide `FROM`-Zeilen im `Dockerfile`, gleich halten); Dependabot schlägt neue Digests als Pull Request vor.
+   Notfalls per Hand: `npm publish --access public` nur in einem **normalen Terminal** (Passkey-2FA; über `!` in
+   Claude Code bricht npm mit `EOTP` ab).
 5. Dokumentierte Konfigurationen nennen immer eine feste Version, nie `:latest`.
 
 ## Worum es geht

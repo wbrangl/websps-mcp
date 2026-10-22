@@ -1,7 +1,8 @@
 name: Release image
 
 # Builds the container image for a release tag and pushes it to the GitHub Container Registry as
-# ghcr.io/<owner>/websps-mcp:<version> (no :latest — configurations always name a fixed version).
+# ghcr.io/<owner>/websps-mcp:<version> (no :latest — configurations always name a fixed version),
+# then publishes the npm package via trusted publishing (OIDC, no token; npm adds provenance).
 on:
   push:
     tags: ["v*"]
@@ -13,11 +14,16 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Resolve tag and version
         id: version
@@ -69,3 +75,33 @@ jobs:
                 -e WEBSPS_URL=http://192.168.2.102 -e WEBSPS_USER=ci -e WEBSPS_PASSWORD=ci \
                 ${{ steps.version.outputs.image }}:${{ steps.version.outputs.version }} \
             | grep '"version":"${{ steps.version.outputs.version }}"'
+
+  npm:
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ needs.image.outputs.tag }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1; Node 22 ships npm 10.
+      - run: npm install -g npm@11.21.1
+      - run: npm ci
+
+      - name: Publish (prepublishOnly runs typecheck, lint and tests)
+        env:
+          VERSION: ${{ needs.image.outputs.version }}
+        run: |
+          if npm view "websps-mcp@$VERSION" version >/dev/null 2>&1; then
+            echo "websps-mcp@$VERSION is already on npm, skipping"
+          else
+            npm publish --access public
+          fi
