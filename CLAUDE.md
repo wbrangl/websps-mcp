@@ -43,9 +43,11 @@ Einzige Versionsquelle ist `package.json` (der Server meldet sie auch im Handsha
 2. `npm run typecheck && npm run lint && npm test`, committen.
 3. Git-Tag `v<x.y.z>` setzen und pushen. Der Workflow `.github/workflows/release.yml` baut daraufhin das Image für
    `linux/amd64` und `linux/arm64` mit OCI-Labels, pusht es als `ghcr.io/wbrangl/websps-mcp:<x.y.z>` (ohne
-   `:latest`) und prüft den Handshake; danach veröffentlicht der Job `npm` das Paket per **Trusted Publishing**
-   (OIDC, kein Token, Provenance automatisch; auf npmjs.com als Trusted Publisher hinterlegt: GitHub Actions,
-   `wbrangl/websps-mcp`, Workflow `release.yml`). Eine schon veröffentlichte Version überspringt er. Für einen
+   `:latest`) und prüft den Handshake; danach stellt der Job `npm` das Paket per **Trusted Publishing** bereit
+   (`npm stage publish`, OIDC, kein Token, Provenance automatisch; auf npmjs.com als Trusted Publisher hinterlegt:
+   GitHub Actions, `wbrangl/websps-mcp`, Workflow `release.yml`, Recht nur „stage publish“). Öffentlich wird die
+   Version erst nach Freigabe mit 2FA auf npmjs.com oder per `npm stage approve <id>` (normales Terminal). Eine
+   schon veröffentlichte Version überspringt der Job. Für einen
    schon vorhandenen Tag: `gh workflow run release.yml -f tag=v<x.y.z>`. Bricht ab, wenn Tag und
    `package.json`-Version nicht übereinstimmen.
 4. GitHub-Release zum Tag anlegen (`gh release create v<x.y.z> --latest`). Basis-Image ist per Digest gepinnt

@@ -2,7 +2,8 @@ name: Release image
 
 # Builds the container image for a release tag and pushes it to the GitHub Container Registry as
 # ghcr.io/<owner>/websps-mcp:<version> (no :latest — configurations always name a fixed version),
-# then publishes the npm package via trusted publishing (OIDC, no token; npm adds provenance).
+# then stages the npm package via trusted publishing (OIDC, no token; npm adds provenance). A
+# maintainer approves the staged version with 2FA (npmjs.com or `npm stage approve <id>`).
 on:
   push:
     tags: ["v*"]
@@ -96,12 +97,12 @@ jobs:
       - run: npm install -g npm@11.21.1
       - run: npm ci
 
-      - name: Publish (prepublishOnly runs typecheck, lint and tests)
+      - name: Stage for publishing (prepublishOnly runs typecheck, lint and tests)
         env:
           VERSION: ${{ needs.image.outputs.version }}
         run: |
           if npm view "websps-mcp@$VERSION" version >/dev/null 2>&1; then
             echo "websps-mcp@$VERSION is already on npm, skipping"
           else
-            npm publish --access public
+            npm stage publish --access public
           fi
