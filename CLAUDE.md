@@ -61,7 +61,7 @@ auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
 
 - TypeScript 7 (ESM, `NodeNext`, strict), Node ≥22 (Node 20 ist EOL; vitest 5 braucht ≥22), npm, `vitest`,
   `biome`; Paketname `websps-mcp`. Alle Abhängigkeiten exakt gepinnt.
-- MCP-SDK: **`@modelcontextprotocol/server` v2** (exakt pinnen, Stand 2.3.0), **nicht** das alte
+- MCP-SDK: **`@modelcontextprotocol/server` v2** (exakt pinnen, Stand 2.3.1), **nicht** das alte
   `@modelcontextprotocol/sdk` 1.x (kennt die Revision 2026-07-28 nicht). v2 bedient über `serveStdio(factory)`
   bzw. `createMcpHandler` neue Clients (2026-07-28, zustandslos) und per Standard (`legacy: 'serve'`) auch ältere
   Clients mit `initialize`-Handshake (2025-11-25 bis 2024-10-07) aus derselben Server-Factory.
