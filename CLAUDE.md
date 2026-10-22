@@ -112,7 +112,8 @@ Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Ve
   Logdatei löschen). Am Gerät je Profil ein eigener Benutzer mit passender `PERM_*`-Maske: read 18925,
   operate 84463, develop 118783 (ohne `CONFIG_WRITE`, mit `SYSTEM_CONTROL`; setzt voraus, dass die Firmware
   `io.label_set` über `RULES_WRITE` statt `CONFIG_WRITE` prüft), admin 122879. `CONFIG_SECRETS` und
-  `CONFIG_CRITICAL` bekommt kein Agentenprofil.
+  `CONFIG_CRITICAL` bekommt kein Agentenprofil. Am Gerät (Firmware V5.0.0) live geprüft: read, operate und develop
+  erlauben bzw. verweigern (FORBIDDEN) genau die erwarteten Methoden; Secrets kommen als `***`.
 - **`STATE_DIR`** (`WEBSPS_STATE_DIR` > `state_dir` in der JSON > `$XDG_STATE_HOME`/`~/.local/state/websps-mcp`
   bzw. `%LOCALAPPDATA%\websps-mcp\state`), pro Gerät ein Unterordner `<alias>/`, wird erst beim ersten Schreiben
   angelegt. Inhalt: `console.jsonl` (Konsolen-Akkumulator, `src/device/consoleLog.ts`: holt bei jedem `log_read`
@@ -158,6 +159,9 @@ Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Ve
 
 ## Fallstricke der Geräte-API
 
+- Der JSON-Parser der Firmware ist kein vollständiger: ein Leerzeichen zwischen `:` und einem Array
+  (`"channels": [`) lässt den Parameter verschwinden (Fehler 3). Der Server sendet JSON immer kompakt
+  (`JSON.stringify`), Testskripte müssen das auch (Python: `separators=(",", ":")`).
 - HTTP-Status ist **immer 200**; `ok` / `error.code` im Body prüfen. Gerätefehler als MCP-`isError` mit
   `{code, name, hint}` abbilden. Falsches Passwort und fehlende Auth liefern beide Code 1.
 - **Firmware-Stände unterscheiden sich, `firmware_version` aber nicht** (`V5.0B Analog`). Neuere Firmware meldet
