@@ -21,8 +21,8 @@ programs — with safeguards built for a single-threaded industrial controller.
 It works with any MCP client and supports both the current protocol revision (2026-07-28) and older
 clients that use the `initialize` handshake.
 
-> **Status:** release `v0.1.1`, available on npm (`npx -y websps-mcp@0.1.1`) and as a container
-> image (`ghcr.io/wbrangl/websps-mcp:0.1.1`, see [Docker](#docker)).
+> **Status:** release `v0.1.2`, available on npm (`npx -y websps-mcp@0.1.2`) and as a container
+> image (`ghcr.io/wbrangl/websps-mcp:0.1.2`, see [Docker](#docker)).
 
 ## Contents
 
@@ -59,7 +59,7 @@ For one device, environment variables are enough. Add the server to your client'
   "mcpServers": {
     "websps": {
       "command": "npx",
-      "args": ["-y", "websps-mcp@0.1.1"],
+      "args": ["-y", "websps-mcp@0.1.2"],
       "env": {
         "WEBSPS_URL": "http://192.168.2.102",
         "WEBSPS_USER": "api_user",
@@ -81,7 +81,7 @@ With Claude Code the same is:
 claude mcp add websps \
   -e WEBSPS_URL=http://192.168.2.102 -e WEBSPS_USER=api_user \
   -e WEBSPS_PASSWORD=change-me -e WEBSPS_PROFILE=read \
-  -- npx -y websps-mcp@0.1.1
+  -- npx -y websps-mcp@0.1.2
 ```
 
 To run it in a container instead, see [Running the container](#running-the-container) for the
@@ -121,7 +121,7 @@ Pass a JSON file with `--config <path>` or `WEBSPS_CONFIG`:
   "mcpServers": {
     "websps": {
       "command": "npx",
-      "args": ["-y", "websps-mcp@0.1.1", "--config", "/etc/websps/devices.json"],
+      "args": ["-y", "websps-mcp@0.1.2", "--config", "/etc/websps/devices.json"],
       "env": { "WEBSPS_LIGHTING_PW": "change-me", "WEBSPS_HEATING_PW": "change-me-too" }
     }
   }
@@ -353,14 +353,14 @@ is published on the GitHub Container Registry as `ghcr.io/wbrangl/websps-mcp:<ve
 ahead of time:
 
 ```sh
-docker pull ghcr.io/wbrangl/websps-mcp:0.1.1
+docker pull ghcr.io/wbrangl/websps-mcp:0.1.2
 ```
 
 - Always put a fixed version into the client configuration; there is no `:latest`.
 - **Updating:** change the version in the client configuration. The old image stays available for
   going back, and the state volume (`websps-state`) is kept.
 - The image labels name version, commit and source:
-  `docker image inspect ghcr.io/wbrangl/websps-mcp:0.1.1 --format '{{json .Config.Labels}}'`.
+  `docker image inspect ghcr.io/wbrangl/websps-mcp:0.1.2 --format '{{json .Config.Labels}}'`.
 
 ### Running the container
 
@@ -373,7 +373,7 @@ claude mcp add websps \
   -- docker run -i --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
      --pids-limit 64 --memory 256m \
      -e WEBSPS_URL -e WEBSPS_USER -e WEBSPS_PASSWORD -e WEBSPS_PROFILE \
-     -v websps-state:/state ghcr.io/wbrangl/websps-mcp:0.1.1
+     -v websps-state:/state ghcr.io/wbrangl/websps-mcp:0.1.2
 ```
 
 `claude mcp list` should then show `websps … ✔ Connected`. The `-e` options before `--` set the
@@ -393,7 +393,7 @@ For other clients, the same as configuration (`-i` keeps stdin open for the prot
         "--pids-limit", "64", "--memory", "256m",
         "-e", "WEBSPS_URL", "-e", "WEBSPS_USER", "-e", "WEBSPS_PASSWORD", "-e", "WEBSPS_PROFILE",
         "-v", "websps-state:/state",
-        "ghcr.io/wbrangl/websps-mcp:0.1.1"
+        "ghcr.io/wbrangl/websps-mcp:0.1.2"
       ],
       "env": {
         "WEBSPS_URL": "http://192.168.2.102",
@@ -424,7 +424,7 @@ For several devices, mount the configuration file and pass each device's passwor
   "-e", "WEBSPS_LIGHTING_PW", "-e", "WEBSPS_HEATING_PW",
   "-v", "/etc/websps:/config:ro",
   "-v", "websps-state:/state",
-  "ghcr.io/wbrangl/websps-mcp:0.1.1", "--config", "/config/devices.json"
+  "ghcr.io/wbrangl/websps-mcp:0.1.2", "--config", "/config/devices.json"
 ],
 "env": { "WEBSPS_LIGHTING_PW": "change-me", "WEBSPS_HEATING_PW": "change-me-too" }
 ```
@@ -463,7 +463,7 @@ configuration file: `password_file` instead of `password_env`) and mount the dir
   "-e", "WEBSPS_PASSWORD_FILE=/config/websps.pw",
   "-v", "/etc/websps:/config:ro",
   "-v", "websps-state:/state",
-  "ghcr.io/wbrangl/websps-mcp:0.1.1"
+  "ghcr.io/wbrangl/websps-mcp:0.1.2"
 ]
 ```
 
@@ -472,14 +472,14 @@ not be readable for others. With rootless Docker, container UID 1000 maps to ano
 the owner from inside a container (where root is your own host user):
 
 ```sh
-docker run --rm --user 0 --entrypoint sh -v /etc/websps:/c ghcr.io/wbrangl/websps-mcp:0.1.1 \
+docker run --rm --user 0 --entrypoint sh -v /etc/websps:/c ghcr.io/wbrangl/websps-mcp:0.1.2 \
   -c 'chown -R 1000:1000 /c && chmod 500 /c && chmod 400 /c/websps.pw'
 ```
 
 Afterwards your host user can no longer read or change the files; to edit them, hand them back first:
 
 ```sh
-docker run --rm --user 0 --entrypoint sh -v /etc/websps:/c ghcr.io/wbrangl/websps-mcp:0.1.1 \
+docker run --rm --user 0 --entrypoint sh -v /etc/websps:/c ghcr.io/wbrangl/websps-mcp:0.1.2 \
   -c 'chown -R 0:0 /c && chmod 700 /c && chmod 600 /c/websps.pw'
 ```
 
@@ -488,24 +488,24 @@ With rootful Docker, `chown 1000 /etc/websps/websps.pw` and `chmod 400` on the h
 ### Building the image yourself
 
 To build the image yourself instead (e.g. to review it first), build it from a release tag
-(`v0.1.1` = image tag `0.1.1`) and use that local name instead of the `ghcr.io` one:
+(`v0.1.2` = image tag `0.1.2`) and use that local name instead of the `ghcr.io` one:
 
 ```sh
-git clone --branch v0.1.1 https://github.com/wbrangl/websps-mcp.git websps-mcp
+git clone --branch v0.1.2 https://github.com/wbrangl/websps-mcp.git websps-mcp
 cd websps-mcp
 docker build \
-  --build-arg VERSION=0.1.1 \
+  --build-arg VERSION=0.1.2 \
   --build-arg REVISION=$(git rev-parse HEAD) \
   --build-arg SOURCE=https://github.com/wbrangl/websps-mcp \
-  -t websps-mcp:0.1.1 .
+  -t websps-mcp:0.1.2 .
 ```
 
 The build arguments only add labels to the image (version, commit, source); a plain
-`docker build -t websps-mcp:0.1.1 .` works too, but then the labels read `dev`/`unknown`. Check
+`docker build -t websps-mcp:0.1.2 .` works too, but then the labels read `dev`/`unknown`. Check
 with:
 
 ```sh
-docker image inspect websps-mcp:0.1.1 --format '{{json .Config.Labels}}'
+docker image inspect websps-mcp:0.1.2 --format '{{json .Config.Labels}}'
 ```
 
 - Name an image after a version only when it is built from that release tag. A build from `main`
@@ -518,7 +518,7 @@ docker image inspect websps-mcp:0.1.1 --format '{{json .Config.Labels}}'
 ## Running from source
 
 ```sh
-git clone --branch v0.1.1 https://github.com/wbrangl/websps-mcp.git websps-mcp
+git clone --branch v0.1.2 https://github.com/wbrangl/websps-mcp.git websps-mcp
 cd websps-mcp
 npm ci
 npm run build

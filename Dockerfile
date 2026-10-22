@@ -2,8 +2,8 @@
 # to it over stdio, exactly like a locally installed server.
 #
 # Release build (see CLAUDE.md, "Release"):
-#   docker build --build-arg VERSION=0.1.1 --build-arg REVISION=$(git rev-parse HEAD) \
-#     --build-arg SOURCE=https://github.com/wbrangl/websps-mcp -t websps-mcp:0.1.1 .
+#   docker build --build-arg VERSION=0.1.2 --build-arg REVISION=$(git rev-parse HEAD) \
+#     --build-arg SOURCE=https://github.com/wbrangl/websps-mcp -t websps-mcp:0.1.2 .
 
 # node:22-alpine, pinned by digest for reproducible images. Written out in both FROM lines (not as
 # an ARG) so Dependabot can update the digest; keep both lines identical.
