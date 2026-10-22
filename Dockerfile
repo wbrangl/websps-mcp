@@ -5,10 +5,9 @@
 #   docker build --build-arg VERSION=0.1.1 --build-arg REVISION=$(git rev-parse HEAD) \
 #     --build-arg SOURCE=https://github.com/wbrangl/websps-mcp -t websps-mcp:0.1.1 .
 
-# node:22-alpine, pinned by digest for reproducible images; update deliberately per release.
-ARG NODE_IMAGE=node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
-
-FROM ${NODE_IMAGE} AS build
+# node:22-alpine, pinned by digest for reproducible images. Written out in both FROM lines (not as
+# an ARG) so Dependabot can update the digest; keep both lines identical.
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -16,7 +15,7 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
 
-FROM ${NODE_IMAGE}
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
 ARG VERSION=dev
 ARG REVISION=unknown
 ARG SOURCE=""

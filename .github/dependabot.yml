@@ -1,0 +1,34 @@
+# Weekly update pull requests; each one runs through CI before it can be merged.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      runtime:
+        dependency-type: production
+      development:
+        dependency-type: development
+    ignore:
+      # The Node.js major version is a deliberate decision (engines: >=22), not an automatic update.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Stay on Node.js 22 until the major version is changed on purpose.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]

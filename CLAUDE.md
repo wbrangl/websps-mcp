@@ -48,7 +48,7 @@ Einzige Versionsquelle ist `package.json` (der Server meldet sie auch im Handsha
 4. npm: `npm publish --access public` in einem **normalen Terminal** (2FA per Passkey braucht ein interaktives
    Terminal; über `!` in Claude Code bricht npm mit `EOTP` ab). `npm login` läuft nach kurzer Zeit ab. Danach
    GitHub-Release zum Tag anlegen (`gh release create v<x.y.z> --latest`). Basis-Image ist per Digest gepinnt
-   (`NODE_IMAGE` im `Dockerfile`) — pro Release bewusst aktualisieren.
+   (beide `FROM`-Zeilen im `Dockerfile`, gleich halten); Dependabot schlägt neue Digests als Pull Request vor.
 5. Dokumentierte Konfigurationen nennen immer eine feste Version, nie `:latest`.
 
 ## Worum es geht
