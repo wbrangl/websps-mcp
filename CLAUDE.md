@@ -159,9 +159,10 @@ Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Ve
 
 ## Fallstricke der Geräte-API
 
-- Der JSON-Parser der Firmware ist kein vollständiger: ein Leerzeichen zwischen `:` und einem Array
-  (`"channels": [`) lässt den Parameter verschwinden (Fehler 3). Der Server sendet JSON immer kompakt
-  (`JSON.stringify`), Testskripte müssen das auch (Python: `separators=(",", ":")`).
+- Der JSON-Parser der Firmware ist kein vollständiger: Leerzeichen **vor** einem `:` (`"method" :`) lassen
+  Methode bzw. Parameter verschwinden (Fehler 3); auf älterer Firmware auch Leerzeichen zwischen `:` und einem
+  Array (`"channels": [`, seit V5.0.0-Fix ok, ebenso eingerücktes JSON). Der Server sendet JSON immer kompakt
+  (`JSON.stringify`), Testskripte sollten das auch (Python: `separators=(",", ":")`).
 - HTTP-Status ist **immer 200**; `ok` / `error.code` im Body prüfen. Gerätefehler als MCP-`isError` mit
   `{code, name, hint}` abbilden. Falsches Passwort und fehlende Auth liefern beide Code 1.
 - **Firmware-Stände unterscheiden sich, `firmware_version` aber nicht** (`V5.0B Analog`). Neuere Firmware meldet
