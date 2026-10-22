@@ -5,6 +5,13 @@
   </picture>
 </p>
 
+<p align="center">
+  <a href="https://github.com/wbrangl/websps-mcp/actions/workflows/ci.yml"><img src="https://github.com/wbrangl/websps-mcp/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/websps-mcp"><img src="https://img.shields.io/npm/v/websps-mcp" alt="npm version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/wbrangl/websps-mcp" alt="License: MIT"></a>
+  <a href="#requirements"><img src="https://img.shields.io/node/v/websps-mcp" alt="Node.js version"></a>
+</p>
+
 # websps-mcp
 
 An [MCP](https://modelcontextprotocol.io) server that lets AI agents read and control **Web@SPS** PLC
