@@ -44,6 +44,8 @@ describe("writeValue", () => {
     expect(writeValue("S0.0", true)).toBe("1");
     expect(writeValue("M9.7", 0)).toBe("0");
     expect(writeValue("SW3", 31.5)).toBe("31.5");
+    expect(writeValue("AA1", 1e-7)).toBe("0.000000");
+    expect(() => writeValue("AA1", 1e21)).toThrow("out of range");
     expect(() => writeValue("S0.0", 2)).toThrow("0 or 1");
     expect(() => writeValue("AA0", Number.NaN)).toThrow("number");
     expect(() => writeValue("AA0", true)).toThrow("number");

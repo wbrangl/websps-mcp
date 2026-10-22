@@ -208,14 +208,17 @@ Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Ve
   `action:"validate"` geht auch in Chunks. Rules-Namen: 8.3 mit `.TXT`. Lesbare/beschreibbare Verzeichnisse meldet
   `api.describe` (`file_endpoint_prefixes`/`file_endpoint_write_prefixes`); neuere Firmware hat `svg/` in
   `scripts/` umbenannt (`svg` bleibt Alias). `fileAreas` in `tools/files.ts` liest das aus, mit fester Liste als
-  Rückfall. Die Antwort meldet `"backup":"X.BAK"` auch dann, wenn es keine vorherige Datei gab.
+  Rückfall. Ältere Firmware meldet `"backup":"X.BAK"` auch ohne vorherige Datei (neuere: `null`); die `message`
+  der Antwort unterscheidet erst auf neuerer Firmware Root-Datei, Nicht-Root-Datei und `SYMBOLIK.INI`.
 - `rules.reload` bei Fehler: Code 6 mit Text; mit vorhandener `.BAK` Rollback und Zustand **STOP**, ohne `.BAK`
   Zustand **RULES (−1)** ohne Rollback. Nach einem Fehler bleibt das Gerät auch nach erfolgreichem Reload in STOP.
   `rules.set_root` meldet „erst mit REINIT/Reboot aktiv“, `rules.reload` aktiviert den neuen Root aber sofort.
   `rules.delete` der aktiven Root-Datei → Code 2 (der Server prüft das vorher selbst).
-- `io.write`: Batch `{"writes":[{channel,value}]}` mit Ergebnis pro Eintrag; Analogwerte werden **ungeprüft**
-  umgewandelt (`"abc"` → 0, Erfolg!) — Werte prüft `writeValue` in `tools/ioWrite.ts`. `SW`-Bereich 0–100 prüft
-  das Gerät. Labels bis 100 Byte verifiziert.
+- `io.write`: Batch `{"writes":[{channel,value}]}` mit Ergebnis pro Eintrag; ältere Firmware wandelt Analogwerte
+  **ungeprüft** um (`"abc"` → 0, Erfolg!), neuere lehnt alles außer Dezimalschreibweise ab („Wert ist keine
+  Zahl“, auch `"1e2"` und `" 2"`); Werte über ~20 Zeichen ergeben „'channel'/'value' fehlt“. Werte prüft und
+  formatiert `writeValue` in `tools/ioWrite.ts` (nie Exponentschreibweise). Bereich 0–100 bei `AA`/`SW` prüft das
+  Gerät. Labels bis 100 Byte verifiziert.
 - `files.delete` erwartet `{directory, filename}` (nicht `path`); auf älterer Firmware scheitert es wie
   `files.list` an der Verzeichnisprüfung.
 
@@ -237,8 +240,9 @@ Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Ve
   alles andere stehen, Prüfung jedes Eintrags wie bei `io_label_set` (Kanal ≤15 Byte ohne `[]=`, Label ≤100 Byte
   ohne `[]=;`), dann `safeWrite` mit diesem CRC als `expected_hash` und danach `io.labels` gegenlesen (`applied`).
   Roh schreiben lässt sich `SYMBOLIK.INI` über `file_write` weiterhin **nicht**.
-  Am Gerät verifiziert: eine per `/files` geschriebene `SYMBOLIK.INI` gilt **sofort** (`io.labels` liefert sie, trotz
-  der Meldung „wirkt erst nach rules.reload“); das Gerät legt dabei wie bei jeder Datei `SYMBOLIK.BAK` an.
+  Am Gerät verifiziert: eine per `/files` geschriebene `SYMBOLIK.INI` gilt **sofort** (`io.labels` liefert sie; ältere
+  Firmware meldet trotzdem „wirkt erst nach rules.reload“); eine vorhandene Datei sichert das Gerät wie jede
+  andere als `SYMBOLIK.BAK`.
 - Tool-Ergebnisse: vollständiges Ergebnis als kompaktes JSON im Text-`content` plus `structuredContent`;
   Annotationen (`readOnlyHint`/`destructiveHint`) sind nur Hinweise. `tools/list` deterministisch sortieren.
   Diagnose über `stderr` (stdout gehört bei stdio dem Protokoll).

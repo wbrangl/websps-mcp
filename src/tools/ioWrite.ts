@@ -21,8 +21,9 @@ const MAX_VERIFY_DELAY_MS = 10_000;
 const valueSchema = z.union([z.number(), z.boolean()]);
 
 /**
- * Only the operand classes the device allows to be written. The device converts analog values
- * without checking (`"abc"` becomes 0), so values are validated here.
+ * Only the operand classes the device allows to be written. Older firmware converts analog values
+ * without checking (`"abc"` becomes 0), so values are validated here. Newer firmware accepts only
+ * plain decimal notation (no exponent) of at most about 20 characters.
  */
 export function writeValue(channel: string, value: number | boolean): string {
   const numeric = typeof value === "boolean" ? Number(value) : value;
@@ -36,7 +37,10 @@ export function writeValue(channel: string, value: number | boolean): string {
     if (typeof value === "boolean" || !Number.isFinite(numeric)) {
       throw invalidInput(`${channel} is analog; value must be a number`);
     }
-    return String(numeric);
+    const text = String(numeric);
+    if (!text.includes("e")) return text;
+    if (Math.abs(numeric) < 1) return numeric.toFixed(6);
+    throw invalidInput(`${channel}: value ${numeric} is out of range`);
   }
   throw invalidInput(
     `${channel} cannot be written; writable are S/M/V/U (e.g. S0.0, value 0/1) and AA/SW (e.g. SW0, a number)`,
