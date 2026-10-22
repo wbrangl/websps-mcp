@@ -39,13 +39,16 @@ Hintergrund; transparent, per `<picture>` je GitHub-Theme: `docs/websps-wordmark
 
 Einzige Versionsquelle ist `package.json` (der Server meldet sie auch im Handshake). Ablauf:
 
-1. `npm version <x.y.z> --no-git-tag-version`, README-Beispiele (`websps-mcp@x.y.z`, `websps-mcp:x.y.z`) anpassen.
+1. `npm version <x.y.z> --no-git-tag-version`, README-Beispiele (`websps-mcp@x.y.z`, `ghcr.io/wbrangl/websps-mcp:x.y.z`, `v<x.y.z>`) anpassen.
 2. `npm run typecheck && npm run lint && npm test`, committen.
-3. Git-Tag `v<x.y.z>` setzen.
-4. Image: `docker build --build-arg VERSION=<x.y.z> --build-arg REVISION=$(git rev-parse HEAD)
-   --build-arg SOURCE=https://github.com/wbrangl/websps-mcp -t websps-mcp:<x.y.z> .` (setzt die OCI-Labels; prüfen mit
-   `docker image inspect`). Basis-Image ist per Digest gepinnt (`NODE_IMAGE` im `Dockerfile`) — pro Release bewusst
-   aktualisieren.
+3. Git-Tag `v<x.y.z>` setzen und pushen. Der Workflow `.github/workflows/release.yml` baut daraufhin das Image für
+   `linux/amd64` und `linux/arm64` mit OCI-Labels, pusht es als `ghcr.io/wbrangl/websps-mcp:<x.y.z>` (ohne
+   `:latest`) und prüft den Handshake. Für einen schon vorhandenen Tag: `gh workflow run release.yml -f tag=v<x.y.z>`.
+   Bricht ab, wenn Tag und `package.json`-Version nicht übereinstimmen.
+4. npm: `npm publish --access public` in einem **normalen Terminal** (2FA per Passkey braucht ein interaktives
+   Terminal; über `!` in Claude Code bricht npm mit `EOTP` ab). `npm login` läuft nach kurzer Zeit ab. Danach
+   GitHub-Release zum Tag anlegen (`gh release create v<x.y.z> --latest`). Basis-Image ist per Digest gepinnt
+   (`NODE_IMAGE` im `Dockerfile`) — pro Release bewusst aktualisieren.
 5. Dokumentierte Konfigurationen nennen immer eine feste Version, nie `:latest`.
 
 ## Worum es geht
@@ -68,8 +71,8 @@ auch mehrere Geräte gleichzeitig. Kein plattformspezifischer Code im Kern.
 ## Architektur
 
 Umgesetzt: alle 24 Tools (Profile read 11 · operate 13 · develop 22 · admin 24), `STATE_DIR` mit Audit-Log und
-Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Noch offen: Remote-HTTP-Adapter,
-Veröffentlichung (npm, Image-Registry, GitHub).
+Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Veröffentlicht: GitHub
+(`wbrangl/websps-mcp`, öffentlich), npm (`websps-mcp`), `ghcr.io/wbrangl/websps-mcp`. Noch offen: Remote-HTTP-Adapter.
 
 - **Transportfreier Kern.** `src/index.ts` (stdio-Adapter: Config laden, `serveStdio`) → `src/server.ts`
   (`createServer(app)`, auch für einen späteren HTTP-Adapter). Die SDK-Factory kann pro Verbindung/Era mehrfach

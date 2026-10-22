@@ -14,8 +14,8 @@ programs — with safeguards built for a single-threaded industrial controller.
 It works with any MCP client and supports both the current protocol revision (2026-07-28) and older
 clients that use the `initialize` handshake.
 
-> **Status:** release `v0.1.1`, available on npm (`npx -y websps-mcp@0.1.1`). A container image is
-> not published to a registry yet: build it from the release tag (see [Docker](#docker)).
+> **Status:** release `v0.1.1`, available on npm (`npx -y websps-mcp@0.1.1`) and as a container
+> image (`ghcr.io/wbrangl/websps-mcp:0.1.1`, see [Docker](#docker)).
 
 ## Contents
 
@@ -30,9 +30,9 @@ clients that use the `initialize` handshake.
 - [State directory](#state-directory)
 - [Errors](#errors)
 - [Docker](#docker)
-  - [Building the image](#building-the-image)
   - [Running the container](#running-the-container)
   - [Optional: password in a file](#optional-password-in-a-file-shared-hosts-orchestrators)
+  - [Building the image yourself](#building-the-image-yourself)
 - [Running from source](#running-from-source)
 - [License](#license)
 
@@ -340,38 +340,20 @@ Check the client's tool settings; `tools/list` of the server always returns all 
 
 ## Docker
 
-The image runs the same stdio server; the MCP client starts a container per session.
-
-### Building the image
-
-No image is published yet, so build it from a release tag (`v0.1.1` = image tag `0.1.1`):
-
-```sh
-git clone --branch v0.1.1 https://github.com/wbrangl/websps-mcp.git websps-mcp
-cd websps-mcp
-docker build \
-  --build-arg VERSION=0.1.1 \
-  --build-arg REVISION=$(git rev-parse HEAD) \
-  --build-arg SOURCE=https://github.com/wbrangl/websps-mcp \
-  -t websps-mcp:0.1.1 .
-```
-
-The build arguments only add labels to the image (version, commit, source); a plain
-`docker build -t websps-mcp:0.1.1 .` works too, but then the labels read `dev`/`unknown`. Check
-with:
+The image runs the same stdio server; the MCP client starts a container per session. Every release
+is published on the GitHub Container Registry as `ghcr.io/wbrangl/websps-mcp:<version>` for
+`linux/amd64` and `linux/arm64` (e.g. Raspberry Pi). Docker pulls it on the first start; to fetch it
+ahead of time:
 
 ```sh
-docker image inspect websps-mcp:0.1.1 --format '{{json .Config.Labels}}'
+docker pull ghcr.io/wbrangl/websps-mcp:0.1.1
 ```
 
-- Name an image after a version only when it is built from that release tag. A build from `main`
-  is a development state: tag it e.g. `websps-mcp:dev`.
-- Always put a fixed version into the client configuration, never `:latest`.
-- **Updating:** check out the new tag (`git fetch --tags && git checkout v<version>`), build it
-  under its own tag, then change the tag in the client configuration. The old image stays
-  available for going back, and the state volume (`websps-state`) is kept.
-- The base image is pinned by digest and the dependencies by `package-lock.json`, so a rebuild of
-  the same tag contains the same software.
+- Always put a fixed version into the client configuration; there is no `:latest`.
+- **Updating:** change the version in the client configuration. The old image stays available for
+  going back, and the state volume (`websps-state`) is kept.
+- The image labels name version, commit and source:
+  `docker image inspect ghcr.io/wbrangl/websps-mcp:0.1.1 --format '{{json .Config.Labels}}'`.
 
 ### Running the container
 
@@ -384,7 +366,7 @@ claude mcp add websps \
   -- docker run -i --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
      --pids-limit 64 --memory 256m \
      -e WEBSPS_URL -e WEBSPS_USER -e WEBSPS_PASSWORD -e WEBSPS_PROFILE \
-     -v websps-state:/state websps-mcp:0.1.1
+     -v websps-state:/state ghcr.io/wbrangl/websps-mcp:0.1.1
 ```
 
 `claude mcp list` should then show `websps … ✔ Connected`. The `-e` options before `--` set the
@@ -404,7 +386,7 @@ For other clients, the same as configuration (`-i` keeps stdin open for the prot
         "--pids-limit", "64", "--memory", "256m",
         "-e", "WEBSPS_URL", "-e", "WEBSPS_USER", "-e", "WEBSPS_PASSWORD", "-e", "WEBSPS_PROFILE",
         "-v", "websps-state:/state",
-        "websps-mcp:0.1.1"
+        "ghcr.io/wbrangl/websps-mcp:0.1.1"
       ],
       "env": {
         "WEBSPS_URL": "http://192.168.2.102",
@@ -435,7 +417,7 @@ For several devices, mount the configuration file and pass each device's passwor
   "-e", "WEBSPS_LIGHTING_PW", "-e", "WEBSPS_HEATING_PW",
   "-v", "/etc/websps:/config:ro",
   "-v", "websps-state:/state",
-  "websps-mcp:0.1.1", "--config", "/config/devices.json"
+  "ghcr.io/wbrangl/websps-mcp:0.1.1", "--config", "/config/devices.json"
 ],
 "env": { "WEBSPS_LIGHTING_PW": "change-me", "WEBSPS_HEATING_PW": "change-me-too" }
 ```
@@ -474,7 +456,7 @@ configuration file: `password_file` instead of `password_env`) and mount the dir
   "-e", "WEBSPS_PASSWORD_FILE=/config/websps.pw",
   "-v", "/etc/websps:/config:ro",
   "-v", "websps-state:/state",
-  "websps-mcp:0.1.1"
+  "ghcr.io/wbrangl/websps-mcp:0.1.1"
 ]
 ```
 
@@ -483,18 +465,48 @@ not be readable for others. With rootless Docker, container UID 1000 maps to ano
 the owner from inside a container (where root is your own host user):
 
 ```sh
-docker run --rm --user 0 --entrypoint sh -v /etc/websps:/c websps-mcp:0.1.1 \
+docker run --rm --user 0 --entrypoint sh -v /etc/websps:/c ghcr.io/wbrangl/websps-mcp:0.1.1 \
   -c 'chown -R 1000:1000 /c && chmod 500 /c && chmod 400 /c/websps.pw'
 ```
 
 Afterwards your host user can no longer read or change the files; to edit them, hand them back first:
 
 ```sh
-docker run --rm --user 0 --entrypoint sh -v /etc/websps:/c websps-mcp:0.1.1 \
+docker run --rm --user 0 --entrypoint sh -v /etc/websps:/c ghcr.io/wbrangl/websps-mcp:0.1.1 \
   -c 'chown -R 0:0 /c && chmod 700 /c && chmod 600 /c/websps.pw'
 ```
 
 With rootful Docker, `chown 1000 /etc/websps/websps.pw` and `chmod 400` on the host do the same.
+
+### Building the image yourself
+
+To build the image yourself instead (e.g. to review it first), build it from a release tag
+(`v0.1.1` = image tag `0.1.1`) and use that local name instead of the `ghcr.io` one:
+
+```sh
+git clone --branch v0.1.1 https://github.com/wbrangl/websps-mcp.git websps-mcp
+cd websps-mcp
+docker build \
+  --build-arg VERSION=0.1.1 \
+  --build-arg REVISION=$(git rev-parse HEAD) \
+  --build-arg SOURCE=https://github.com/wbrangl/websps-mcp \
+  -t websps-mcp:0.1.1 .
+```
+
+The build arguments only add labels to the image (version, commit, source); a plain
+`docker build -t websps-mcp:0.1.1 .` works too, but then the labels read `dev`/`unknown`. Check
+with:
+
+```sh
+docker image inspect websps-mcp:0.1.1 --format '{{json .Config.Labels}}'
+```
+
+- Name an image after a version only when it is built from that release tag. A build from `main`
+  is a development state: tag it e.g. `websps-mcp:dev`.
+- **Updating:** check out the new tag (`git fetch --tags && git checkout v<version>`) and build it
+  under its own tag.
+- The base image is pinned by digest and the dependencies by `package-lock.json`, so a rebuild of
+  the same tag contains the same software.
 
 ## Running from source
 
