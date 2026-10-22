@@ -94,14 +94,14 @@ Pass a JSON file with `--config <path>` or `WEBSPS_CONFIG`:
   "state_dir": "./state",
   "devices": [
     {
-      "alias": "pool",
+      "alias": "lighting",
       "url": "http://192.168.2.102",
-      "auth": { "user": "api_user", "password_env": "WEBSPS_POOL_PW" }
+      "auth": { "user": "api_user", "password_env": "WEBSPS_LIGHTING_PW" }
     },
     {
-      "alias": "garden",
+      "alias": "heating",
       "url": "http://192.168.2.103",
-      "auth": { "user": "api_user", "password_env": "WEBSPS_GARDEN_PW" },
+      "auth": { "user": "api_user", "password_env": "WEBSPS_HEATING_PW" },
       "timeout_ms": 8000,
       "timeouts_ms": { "io.read_all": 10000 }
     }
@@ -115,7 +115,7 @@ Pass a JSON file with `--config <path>` or `WEBSPS_CONFIG`:
     "websps": {
       "command": "npx",
       "args": ["-y", "websps-mcp@0.1.1", "--config", "/etc/websps/devices.json"],
-      "env": { "WEBSPS_POOL_PW": "change-me", "WEBSPS_GARDEN_PW": "change-me-too" }
+      "env": { "WEBSPS_LIGHTING_PW": "change-me", "WEBSPS_HEATING_PW": "change-me-too" }
     }
   }
 }
@@ -432,12 +432,12 @@ For several devices, mount the configuration file and pass each device's passwor
   "run", "-i", "--rm",
   "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
   "--pids-limit", "64", "--memory", "256m",
-  "-e", "WEBSPS_POOL_PW", "-e", "WEBSPS_GARDEN_PW",
+  "-e", "WEBSPS_LIGHTING_PW", "-e", "WEBSPS_HEATING_PW",
   "-v", "/etc/websps:/config:ro",
   "-v", "websps-state:/state",
   "websps-mcp:0.1.1", "--config", "/config/devices.json"
 ],
-"env": { "WEBSPS_POOL_PW": "change-me", "WEBSPS_GARDEN_PW": "change-me-too" }
+"env": { "WEBSPS_LIGHTING_PW": "change-me", "WEBSPS_HEATING_PW": "change-me-too" }
 ```
 
 - The state directory inside the container is `/state`. Use a **named volume** (as above), and the

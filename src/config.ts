@@ -15,7 +15,7 @@ const DEFAULT_ENV_ALIAS = "websps";
 
 /** Where a device password comes from; re-read when the auth circuit breaker probes again. */
 export interface PasswordSource {
-  /** e.g. `env WEBSPS_POOL_PW` — never the secret itself. */
+  /** e.g. `env WEBSPS_LIGHTING_PW` — never the secret itself. */
   readonly description: string;
   read(): string;
 }
