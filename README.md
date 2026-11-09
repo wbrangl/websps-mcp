@@ -182,7 +182,7 @@ add a second server entry with its own profile.
 |---|---|---|
 | `devices_list` | read | Configured devices, reachability, firmware |
 | `device_status` | read | Operating status, device info, configured and running rules file, message box |
-| `io_read` | read | Channel values with labels, or the complete state of all operands |
+| `io_read` | read | Complete state of all operands (bit operands: what is on), or the given channels; with labels |
 | `io_usage` | read | Which channel addresses the active rules use, and which are free |
 | `io_labels` | read | Human-readable channel names set on the device |
 | `log_read` | read | Console messages (kept beyond the device's 25 lines) or a search of the log file (recent part by default, `full_scan` for all) |

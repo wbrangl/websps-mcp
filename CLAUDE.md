@@ -157,8 +157,10 @@ Backups und Aufbewahrung, Sperrdatei pro Gerät, Docker-Image, Kunden-README. Ve
       (variantenabhängig mit Fußnoten, z.B. „¹ 8/16“).
     - Nicht zuordenbare Felder (z.B. `status`, `cycle`, `msgcnt`) unverändert in `extra` durchreichen. Schlägt das
       Laden der Tabelle fehl, gilt nur die generische Regel (neuer Versuch nach 5 min).
-    - Umgesetzt in `src/device/readAll.ts`; `io_read all:true` listet bei Bit-Operanden nur die gesetzten Kanäle
-      (`on`), bei Wertgruppen >16 nur Werte ≠ 0 (`zero_omitted`), plus `labeled` für alle beschrifteten Kanäle.
+    - Umgesetzt in `src/device/readAll.ts`; `io_read` ohne (oder mit leerer) `channels`-Liste liefert den
+      Gesamtzustand (bewusst kein `all`-Schalter: Modelle füllten `channels` und `all` gleichzeitig) und listet bei
+      Bit-Operanden nur die gesetzten Kanäle (`on`), bei Wertgruppen >16 nur Werte ≠ 0 (`zero_omitted`), plus
+      `labeled` für alle beschrifteten Kanäle.
 - **Lange Vorgänge** (`sample`, Warten auf `rules_activate`) über ein Start/Abruf-Muster mit vom Server vergebenem
   Handle — nicht über MCP-Tasks und nicht synchron blockierend (Client-Timeouts ca. 50–60s).
 

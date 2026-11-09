@@ -67,8 +67,8 @@ describe.each([
     ]);
   });
 
-  it("returns the complete state with all: true", async () => {
-    const result = await client.callTool({ name: "io_read", arguments: { all: true } });
+  it("returns the complete state without channels", async () => {
+    const result = await client.callTool({ name: "io_read", arguments: {} });
     const body = parse(result);
     expect(body.operands.H).toMatchObject({ description: "Melder", on: ["H1.2"] });
     expect(body.operands.CV).toMatchObject({ values: { "CV0.3": 7 }, zero_omitted: true });
@@ -76,6 +76,24 @@ describe.each([
     expect(body.labeled).toEqual({ "S0.0": { label: "Pump on", value: 1 } });
     expect(body.extra).toEqual({ status: 1 });
     expect(body.timestamp).toBe("2026-01-01T00:00:00Z");
+  });
+
+  it("returns the complete state for an empty channel list and narrows it with types", async () => {
+    const empty = parse(await client.callTool({ name: "io_read", arguments: { channels: [] } }));
+    expect(empty.operands.H).toMatchObject({ on: ["H1.2"] });
+    const narrowed = parse(
+      await client.callTool({ name: "io_read", arguments: { channels: [], types: ["h", "AE"] } }),
+    );
+    expect(Object.keys(narrowed.operands).sort()).toEqual(["AE", "H"]);
+  });
+
+  it("reads only the given channels even with leftover fields", async () => {
+    const result = await client.callTool({
+      name: "io_read",
+      arguments: { channels: ["S0.0"], types: ["A"], all: true },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(parse(result).channels).toEqual([{ channel: "S0.0", value: 1, label: "Pump on" }]);
   });
 
   it("reports partial failures in device_status", async () => {
@@ -189,9 +207,14 @@ describe.each([
   });
 
   it("rejects invalid input without contacting the device", async () => {
-    const result = await client.callTool({ name: "io_read", arguments: {} });
+    const before = device.state.calls.length;
+    const result = await client.callTool({
+      name: "io_read",
+      arguments: { channels: ["S0.0", "X".repeat(16)] },
+    });
     expect(result.isError).toBe(true);
     expect(parse(result).error).toMatchObject({ code: 1007, name: "INVALID_INPUT" });
+    expect(device.state.calls.length).toBe(before);
   });
 });
 

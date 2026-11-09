@@ -23,27 +23,22 @@ export const ioRead: ToolDefinition = {
         description: [
           "Read current values of Web@SPS operands, e.g. S0.0 (visu switch), A0.0 (output), M0.0 (marker), AE0 (analog input).",
           "Counters/timers: C0.0/T0.0 return only the 'preset reached' flag (0/1); read CV0.0/TV0.0 for the counter/timer value.",
-          `Either pass up to ${MAX_BATCH} \`channels\`, or \`all: true\` for the complete state of all operands`,
-          '(optionally narrowed with `types`, e.g. ["S","A","AE"]); for bit operands `all` lists only the channels that are 1.',
+          "Without `channels`, returns the complete state of all operands (bit operands: only the channels that are 1),",
+          'optionally narrowed with `types`, e.g. {"types": ["A","M"]} for "which outputs and markers are on?".',
+          `To read specific channels, pass up to ${MAX_BATCH} of them, e.g. {"channels": ["S0.0","CV0.0"]}; \`types\` is then ignored.`,
           "Results include the channel label when one is set on the device.",
         ].join(" "),
         inputSchema: z.object({
           device: deviceParam(app),
-          channels: z.array(z.string().min(1)).min(1).max(MAX_BATCH).optional(),
-          all: z.boolean().optional(),
+          channels: z.array(z.string().min(1)).max(MAX_BATCH).optional(),
           types: z.array(z.string().min(1)).min(1).optional(),
         }),
         annotations: READ_ONLY,
       },
-      handler(async ({ device: alias, channels, all, types }) => {
+      handler(async ({ device: alias, channels, types }) => {
         const device = app.devices.resolve(alias);
-        if (channels !== undefined && all === true) {
-          throw invalidInput("Both `channels` and `all` were given; remove one of them");
-        }
-        if (channels === undefined && all !== true) {
-          throw invalidInput("Pass `channels` (list of channel names) or `all: true`");
-        }
-        if (channels !== undefined) return readChannels(device, channels);
+        // No (or an empty) channel list means the complete state: models tend to fill every field.
+        if (channels !== undefined && channels.length > 0) return readChannels(device, channels);
         return readAll(device, types);
       }),
     );
