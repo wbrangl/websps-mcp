@@ -1,6 +1,6 @@
 {
   "files": {
-    "includes": ["**", "!dist", "!tmp", "!state", "!coverage"]
+    "includes": ["**", "!dist", "!tmp", "!state", "!coverage", "!**/*.md"]
   },
   "formatter": {
     "indentStyle": "space",
